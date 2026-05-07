@@ -1,0 +1,63 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}{{ page_title }} | FileShare{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-center">
+      <div>
+        <h3 class="mb-1">{{ page_title }}</h3>
+        <div class="text-body-secondary">{{ page_description }}</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for crumb in breadcrumbs %}
+          <a href="{{ crumb.url }}" class="btn btn-outline-secondary btn-sm">{{ crumb.label }}</a>
+        {% endfor %}
+        <a href="{{ back_url }}" class="btn btn-outline-light btn-sm">Back</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label for="id_content" class="form-label">{{ file_name }}</label>
+          <textarea id="id_content" name="content" class="form-control text-editor-field" rows="24" spellcheck="false" {% if not can_edit_text %}readonly{% endif %}>{{ file_content }}</textarea>
+        </div>
+        <div class="d-flex gap-2">
+          {% if can_edit_text %}
+            <button type="submit" class="btn btn-primary">Save changes</button>
+          {% endif %}
+          <button type="button" class="btn btn-outline-secondary" id="close-editor-button" data-fallback-url="{{ back_url }}">Close</button>
+        </div>
+        {% if not can_edit_text %}
+          <div class="form-text mt-2">This file is read only in the current location.</div>
+        {% endif %}
+      </form>
+    </div>
+  </section>
+{% endblock %}
+
+{% block extra_js %}
+  {{ block.super }}
+  <script>
+    (function () {
+      var closeButton = document.getElementById('close-editor-button');
+      if (!closeButton) {
+        return;
+      }
+
+      closeButton.addEventListener('click', function () {
+        var fallbackUrl = closeButton.getAttribute('data-fallback-url') || '/';
+        window.close();
+        window.setTimeout(function () {
+          if (!window.closed) {
+            window.location.href = fallbackUrl;
+          }
+        }, 150);
+      });
+    }());
+  </script>
+{% endblock %}

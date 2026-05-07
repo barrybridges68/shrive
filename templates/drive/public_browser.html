@@ -1,0 +1,180 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} | FileShare</title>
+    <link rel="stylesheet" href="{% static 'assets/fonts/bootstrap/bootstrap-icons.css' %}">
+    <link rel="stylesheet" href="{% static 'assets/css/main.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/fileshare.css' %}">
+  </head>
+  <body class="fileshare-body">
+    <div class="container py-4">
+      <section class="card border-0 shadow-sm mb-4">
+        <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-center">
+          <div>
+            <h3 class="mb-1">{{ page_title }}</h3>
+            <div class="text-body-secondary">{{ page_description }}</div>
+            <div class="small text-body-secondary mt-1">Owner: {{ share_owner }}</div>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for crumb in breadcrumbs %}
+              <a href="{{ crumb.url }}" class="btn btn-outline-secondary btn-sm">{{ crumb.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 files-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th style="width: 12%;">Size</th>
+                  <th style="width: 15%;">Updated</th>
+                  <th style="width: 20%;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if shared_root_entry %}
+                  <tr>
+                    <td>
+                      <div class="d-flex align-items-center gap-3">
+                        <a href="{{ shared_root_entry.browse_url }}" class="file-icon folder" aria-label="Open folder {{ shared_root_entry.name }}" title="Open folder {{ shared_root_entry.name }}">
+                          <i class="bi bi-folder-fill"></i>
+                        </a>
+                        <a href="{{ shared_root_entry.browse_url }}" class="fw-semibold text-decoration-none">{{ shared_root_entry.name }}</a>
+                      </div>
+                    </td>
+                    <td>Folder</td>
+                    <td>{{ shared_root_entry.modified_at|date:'Y-m-d H:i' }}</td>
+                    <td>
+                      <div class="d-flex flex-wrap gap-2 justify-content-end">
+                        <a href="{{ shared_root_entry.download_url }}" class="btn btn-outline-secondary btn-sm" data-folder-download="true" data-folder-name="{{ shared_root_entry.name|escape }}">
+                          <i class="bi bi-download me-1"></i>Download
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endif %}
+                {% if parent_url %}
+                  <tr>
+                    <td colspan="4">
+                      <a href="{{ parent_url }}" class="text-decoration-none">
+                        <i class="bi bi-arrow-up-circle me-2"></i>Back to parent folder
+                      </a>
+                    </td>
+                  </tr>
+                {% endif %}
+                {% for entry in entries %}
+                  <tr>
+                    <td>
+                      <div class="d-flex align-items-center gap-3">
+                        {% if entry.is_dir and entry.browse_url %}
+                          <a href="{{ entry.browse_url }}" class="file-icon {{ entry.icon_tone|default:'file' }}">
+                            {% if entry.thumbnail_url %}
+                              <img src="{{ entry.thumbnail_url }}" alt="{{ entry.name }} thumbnail" class="file-thumb-image">
+                            {% else %}
+                              <i class="bi {{ entry.icon_name|default:'bi-file-earmark-fill' }}"></i>
+                            {% endif %}
+                          </a>
+                        {% elif entry.open_url %}
+                          <a href="{{ entry.open_url }}" class="file-icon {{ entry.icon_tone|default:'file' }}" target="_blank" rel="noopener">
+                            {% if entry.thumbnail_url %}
+                              <img src="{{ entry.thumbnail_url }}" alt="{{ entry.name }} thumbnail" class="file-thumb-image">
+                            {% else %}
+                              <i class="bi {{ entry.icon_name|default:'bi-file-earmark-fill' }}"></i>
+                            {% endif %}
+                          </a>
+                        {% elif entry.download_url %}
+                          <a href="{{ entry.download_url }}" class="file-icon {{ entry.icon_tone|default:'file' }}">
+                            {% if entry.thumbnail_url %}
+                              <img src="{{ entry.thumbnail_url }}" alt="{{ entry.name }} thumbnail" class="file-thumb-image">
+                            {% else %}
+                              <i class="bi {{ entry.icon_name|default:'bi-file-earmark-fill' }}"></i>
+                            {% endif %}
+                          </a>
+                        {% endif %}
+                        <div>
+                          {% if entry.is_dir and entry.browse_url %}
+                            <a href="{{ entry.browse_url }}" class="fw-semibold text-decoration-none">{{ entry.name }}</a>
+                          {% elif entry.download_url %}
+                            <a href="{{ entry.download_url }}" class="fw-semibold text-decoration-none">{{ entry.name }}</a>
+                          {% else %}
+                            <span class="fw-semibold">{{ entry.name }}</span>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </td>
+                    <td>{% if entry.size is not None %}{{ entry.size|filesizeformat }}{% else %}Folder{% endif %}</td>
+                    <td>{{ entry.modified_at|date:'Y-m-d H:i' }}</td>
+                    <td>
+                      <div class="d-flex flex-wrap gap-2 justify-content-end">
+                        {% if entry.download_url %}
+                          <a href="{{ entry.download_url }}" class="btn btn-outline-secondary btn-sm" {% if entry.is_dir %}data-folder-download="true" data-folder-name="{{ entry.name|escape }}"{% endif %}>
+                            <i class="bi bi-download me-1"></i>Download
+                          </a>
+                        {% endif %}
+                      </div>
+                    </td>
+                  </tr>
+                {% empty %}
+                  {% if not shared_root_entry %}
+                  <tr>
+                    <td colspan="4" class="text-center py-5 text-body-secondary">This folder is empty.</td>
+                  </tr>
+                  {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script src="{% static 'assets/js/bootstrap.bundle.min.js' %}"></script>
+    <script>
+      (function () {
+        var noticeId = 'folder-download-notice';
+
+        function showFolderDownloadNotice(folderName) {
+          var existingNotice = document.getElementById(noticeId);
+          if (existingNotice) {
+            existingNotice.remove();
+          }
+
+          var notice = document.createElement('div');
+          notice.id = noticeId;
+          notice.className = 'alert alert-info shadow-sm';
+          notice.setAttribute('role', 'status');
+          notice.setAttribute('aria-live', 'polite');
+          notice.style.position = 'fixed';
+          notice.style.top = '1rem';
+          notice.style.right = '1rem';
+          notice.style.zIndex = '1080';
+          notice.style.maxWidth = '28rem';
+          notice.innerHTML = '<strong>Preparing folder download</strong><div class="small mt-1">' +
+            (folderName ? folderName + ' is being zipped first.' : 'This folder is being zipped first.') +
+            ' Please wait.</div>';
+
+          document.body.appendChild(notice);
+          window.setTimeout(function () {
+            if (notice.parentNode) {
+              notice.parentNode.removeChild(notice);
+            }
+          }, 8000);
+        }
+
+        document.addEventListener('click', function (event) {
+          var link = event.target.closest('[data-folder-download="true"]');
+          if (!link) {
+            return;
+          }
+          showFolderDownloadNotice(link.getAttribute('data-folder-name') || 'Folder');
+        });
+      })();
+    </script>
+  </body>
+</html>

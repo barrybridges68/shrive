@@ -1,0 +1,94 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}Admin Stats | FileShare{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h3 class="mb-1">Admin stats</h3>
+      <p class="text-body-secondary mb-0">Overview of user transfer activity, storage usage, and account access timestamps.</p>
+    </div>
+  </section>
+
+  <div class="row g-3 mb-4">
+    <div class="col-12 col-md-6 col-xl-3">
+      <section class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Users tracked</div>
+          <div class="fs-4 fw-semibold">{{ total_users }}</div>
+        </div>
+      </section>
+    </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <section class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Total storage used</div>
+          <div class="fs-4 fw-semibold">{{ total_storage_used|filesizeformat }}</div>
+        </div>
+      </section>
+    </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <section class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Uploaded</div>
+          <div class="fs-4 fw-semibold">{{ total_uploaded|filesizeformat }}</div>
+        </div>
+      </section>
+    </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <section class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-body-secondary small">Downloaded</div>
+          <div class="fs-4 fw-semibold">{{ total_downloaded|filesizeformat }}</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 files-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th>Storage usage</th>
+              <th>Uploaded</th>
+              <th>Downloaded</th>
+              <th>Last upload</th>
+              <th>Last download</th>
+              <th>Last login</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user_stat in user_stats %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ user_stat.username }}</div>
+                  <div class="small text-body-secondary">{{ user_stat.email|default:'No email' }}</div>
+                </td>
+                <td>{{ user_stat.role }}</td>
+                <td>
+                  <div>{{ user_stat.used_bytes|filesizeformat }} / {{ user_stat.quota_bytes|filesizeformat }}</div>
+                  <div class="progress mt-1" role="progressbar" aria-label="Usage">
+                    <div class="progress-bar" style="width: {{ user_stat.usage_percent }}%"></div>
+                  </div>
+                </td>
+                <td>{{ user_stat.uploaded_bytes|filesizeformat }}</td>
+                <td>{{ user_stat.downloaded_bytes|filesizeformat }}</td>
+                <td>{% if user_stat.last_upload_at %}{{ user_stat.last_upload_at|date:'Y-m-d H:i' }}{% else %}<span class="text-body-secondary">Never</span>{% endif %}</td>
+                <td>{% if user_stat.last_download_at %}{{ user_stat.last_download_at|date:'Y-m-d H:i' }}{% else %}<span class="text-body-secondary">Never</span>{% endif %}</td>
+                <td>{% if user_stat.last_login %}{{ user_stat.last_login|date:'Y-m-d H:i' }}{% else %}<span class="text-body-secondary">Never</span>{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="8" class="text-center py-4 text-body-secondary">No users found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+{% endblock %}

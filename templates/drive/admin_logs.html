@@ -1,0 +1,54 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}Audit Logs | FileShare{% endblock %}
+
+{% block extra_css %}
+  <style>
+    .audit-log-output {
+      background-color: #000;
+      color: #d7d7d7;
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div>
+        <h3 class="mb-1">Audit logs</h3>
+        <p class="text-body-secondary mb-0">View recent entries from the audit log file.</p>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <form method="get" class="d-flex align-items-center gap-2">
+          <label for="line-count" class="form-label mb-0">Lines</label>
+          <select id="line-count" name="lines" class="form-select form-select-sm" style="min-width: 120px;">
+            {% for option in line_options %}
+              <option value="{{ option }}" {% if option == selected_line_count %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="small text-body-secondary mb-3">Source: {{ log_path }}</div>
+      {% if log_read_error %}
+        <div class="alert alert-warning mb-0">{{ log_read_error }}</div>
+      {% elif log_lines %}
+        <pre class="mb-0 p-3 rounded-3 border audit-log-output" style="max-height: 70vh; overflow: auto; white-space: pre-wrap;">{% for line in log_lines %}{{ line }}{% endfor %}</pre>
+      {% else %}
+        <div class="alert alert-info mb-0">No log entries to show.</div>
+      {% endif %}
+      <div class="mt-3">
+        <a href="{% url 'drive:admin-logs-download' %}" class="btn btn-outline-light btn-sm">
+          <i class="bi bi-download me-1"></i>Download log
+        </a>
+      </div>
+    </div>
+  </section>
+{% endblock %}

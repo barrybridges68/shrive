@@ -1,0 +1,566 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}User Management | FileShare{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h3 class="mb-1">User management</h3>
+      <div class="text-body-secondary">Create users with random passwords, update quota limits, remove users, and manage groups.</div>
+      <div class="mt-3 d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#create-user-modal">
+          <i class="bi bi-person-plus me-1"></i>Create user
+        </button>
+        <a href="{% url 'drive:admin-settings' %}" class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-sliders me-1"></i>Admin settings
+        </a>
+        <a href="{% url 'drive:admin-stats' %}" class="btn btn-outline-info btn-sm">
+          <i class="bi bi-graph-up me-1"></i>View admin stats
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <div class="modal fade" id="create-user-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form method="post" class="row g-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_user">
+          <div class="modal-header">
+            <h5 class="modal-title">Create user</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <label for="id_username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="id_username" name="username" value="{{ create_form.username.value|default:'' }}" required>
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="id_email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="id_email" name="email" value="{{ create_form.email.value|default:'' }}">
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="id_quota_gib" class="form-label">Quota (GiB)</label>
+                <input type="number" class="form-control" id="id_quota_gib" name="quota_gib" min="0.1" step="0.1" value="{{ create_form.quota_gib.value|default:'1.0' }}" required>
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="id_generated_password" class="form-label">Default password</label>
+                <input type="text" class="form-control" id="id_generated_password" value="Randomly generated when user is created" readonly>
+                <div class="form-text">The generated password is shown once and emailed when an address is provided.</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">User-specific read-only share roots</label>
+                <div class="input-group mb-2">
+                  <input type="text" class="form-control font-monospace" id="id_create_readonly_root_input" placeholder="/path/to/folder">
+                  <button type="button" class="btn btn-outline-secondary" id="id_create_add_readonly_root">Add</button>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover align-middle mb-1 d-none" id="create_readonly_roots_table">
+                    <tbody id="create_readonly_roots_tbody"></tbody>
+                  </table>
+                  <div class="small text-body-secondary mb-1" id="create_readonly_roots_empty">No paths added yet.</div>
+                </div>
+                <textarea class="d-none" id="id_create_readonly_storage_roots" name="readonly_storage_roots"></textarea>
+                <div class="form-text">Optional. Absolute folder paths for this user only.</div>
+              </div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="1" id="id_is_staff" name="is_staff" {% if create_form.is_staff.value %}checked{% endif %}>
+                  <label class="form-check-label" for="id_is_staff">Admin access</label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create user</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 files-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th>Usage</th>
+              <th>Quota</th>
+              <th class="w-35 text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for managed_user in managed_users %}
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    {% if managed_user.avatar_url %}
+                      <img
+                        src="{{ managed_user.avatar_url }}"
+                        alt="{{ managed_user.username }} avatar"
+                        class="rounded-circle border border-light-subtle"
+                        width="30"
+                        height="30"
+                        loading="lazy"
+                      >
+                    {% else %}
+                      <span class="text-body-secondary" aria-hidden="true"><i class="bi bi-person-circle"></i></span>
+                    {% endif %}
+                    <div>
+                      <div class="fw-semibold">{{ managed_user.username }}</div>
+                      <div class="small text-body-secondary">{{ managed_user.email|default:'No email' }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  {% if managed_user.is_superuser %}
+                    <span class="badge text-bg-warning">Superuser</span>
+                  {% elif managed_user.is_staff %}
+                    <span class="badge text-bg-info">Staff</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">User</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div>{{ managed_user.used_bytes|filesizeformat }} / {{ managed_user.quota_bytes|filesizeformat }}</div>
+                  <div class="progress mt-1" role="progressbar" aria-label="Usage">
+                    <div class="progress-bar" style="width: {{ managed_user.usage_percent }}%"></div>
+                  </div>
+                </td>
+                <td>{{ managed_user.quota_gib|floatformat:2 }} GiB</td>
+                <td class="text-end">
+                  <button
+                    type="button"
+                    class="btn btn-outline-info btn-sm me-1"
+                    aria-label="View shares for {{ managed_user.username }}"
+                    title="View shares"
+                    onclick="window.location.href='{% url 'drive:user-shares' managed_user.id %}'"
+                  >
+                    <i class="bi bi-share"></i>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-outline-warning btn-sm reset-password-button me-1"
+                    aria-label="Reset password for {{ managed_user.username }}"
+                    title="Reset password"
+                    data-user-id="{{ managed_user.id }}"
+                    data-username="{{ managed_user.username|escape }}"
+                  >
+                    <i class="bi bi-key"></i>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-outline-primary btn-sm edit-user-button"
+                    aria-label="Edit user {{ managed_user.username }}"
+                    title="Edit user"
+                    data-user-id="{{ managed_user.id }}"
+                    data-username="{{ managed_user.username|escape }}"
+                    data-email="{{ managed_user.email|default:''|escape }}"
+                    data-quota-gib="{{ managed_user.quota_gib|floatformat:2 }}"
+                    data-is-staff="{% if managed_user.is_staff %}1{% else %}0{% endif %}"
+                    data-is-superuser="{% if managed_user.is_superuser %}1{% else %}0{% endif %}"
+                    data-can-delete="{% if managed_user.can_delete %}1{% else %}0{% endif %}"
+                    data-groups="{{ managed_user.group_ids|join:',' }}"
+                    data-user-pk="{{ managed_user.id }}"
+                  >
+                    <i class="bi bi-pencil-square"></i>
+                  </button>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="5" class="text-center py-4 text-body-secondary">No users found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm mb-4 mt-4">
+    <div class="card-body">
+      <h5 class="mb-3">Groups</h5>
+      <form method="post" class="mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_group">
+        <label for="id_group_name" class="form-label">New group name</label>
+        <div class="input-group">
+          <input type="text" class="form-control" id="id_group_name" name="name" value="{{ group_form.name.value|default:'' }}" required>
+          <button type="submit" class="btn btn-outline-primary">Create group</button>
+        </div>
+        <div class="form-text">Users can only share files and folders with other members of the same group.</div>
+      </form>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 files-table">
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for group in group_choices %}
+              <tr>
+                <td class="fw-semibold">{{ group.name }}</td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-outline-primary btn-sm open-rename-group-modal me-1" data-group-id="{{ group.id }}" data-group-name="{{ group.name|escape }}" aria-label="Rename group {{ group.name }}" title="Rename group">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <button type="button" class="btn btn-outline-danger btn-sm open-delete-group-modal" data-group-id="{{ group.id }}" data-group-name="{{ group.name|escape }}" aria-label="Delete group {{ group.name }}" title="Delete group">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="2" class="text-center py-3 text-body-secondary">No groups created yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="modal fade" id="edit-user-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form method="post" id="edit-user-form" class="row g-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" id="edit_user_action" value="update_user">
+          <input type="hidden" name="user_id" id="edit_user_id">
+          <div class="modal-header">
+            <h5 class="modal-title">Edit user</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <label for="edit_username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="edit_username" readonly>
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="edit_email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="edit_email" name="email">
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="edit_quota_gib" class="form-label">Quota (GiB)</label>
+                <input type="number" class="form-control" id="edit_quota_gib" name="quota_gib" min="0.1" step="0.1" required>
+              </div>
+              <div class="col-12 col-lg-6 d-flex align-items-end">
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" value="1" id="edit_is_staff" name="is_staff">
+                  <label class="form-check-label" for="edit_is_staff">Admin access</label>
+                </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Groups</label>
+                <div id="edit_groups" class="border rounded p-3" style="max-height: 12rem; overflow-y: auto;">
+                  {% for group in group_choices %}
+                    <div class="form-check">
+                      <input class="form-check-input edit-group-checkbox" type="checkbox" value="{{ group.id }}" id="edit_group_{{ group.id }}" name="groups">
+                      <label class="form-check-label" for="edit_group_{{ group.id }}">{{ group.name }}</label>
+                    </div>
+                  {% empty %}
+                    <div class="small text-body-secondary">No groups available. Create a group first.</div>
+                  {% endfor %}
+                </div>
+                <div class="form-text">Users can share only with members of the same selected groups.</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">User-specific read-only share roots</label>
+                <div class="input-group mb-2">
+                  <input type="text" class="form-control font-monospace" id="edit_readonly_root_input" placeholder="/path/to/folder">
+                  <button type="button" class="btn btn-outline-secondary" id="edit_add_readonly_root">Add</button>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover align-middle mb-1 d-none" id="edit_readonly_roots_table">
+                    <tbody id="edit_readonly_roots_tbody"></tbody>
+                  </table>
+                  <div class="small text-body-secondary mb-1" id="edit_readonly_roots_empty">No paths added yet.</div>
+                </div>
+                <textarea class="d-none" id="edit_readonly_storage_roots" name="readonly_storage_roots"></textarea>
+                <div class="form-text">Optional. Absolute folder paths for this user only.</div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer d-flex justify-content-between">
+            <div>
+              <button type="submit" class="btn btn-outline-danger d-none" id="remove-user-button" formnovalidate>Remove user</button>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary" id="save-user-button">Save changes</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="reset-password-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" id="reset-password-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reset_user_password">
+          <input type="hidden" name="user_id" id="reset_user_id">
+          <div class="modal-header">
+            <h5 class="modal-title">Reset password</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">Generate a new random password for <span class="fw-semibold" id="reset_username"></span>? The new password will be shown in the page messages.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-warning">Reset password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="delete-group-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" id="delete-group-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_group">
+          <input type="hidden" name="group_id" id="delete_group_id">
+          <div class="modal-header">
+            <h5 class="modal-title">Delete group</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">Delete group <span class="fw-semibold" id="delete_group_name"></span>? This cannot be undone.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger">Delete group</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="rename-group-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" id="rename-group-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="rename_group">
+          <input type="hidden" name="group_id" id="rename_group_id">
+          <div class="modal-header">
+            <h5 class="modal-title">Rename group</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <label for="rename_group_name" class="form-label">Group name</label>
+            <input type="text" class="form-control" id="rename_group_name" name="name" required>
+            <div class="form-text">Renaming keeps existing sharing links because the same group record is retained.</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save name</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+  {{ block.super }}
+  {{ readonly_roots_data|json_script:"readonly-roots-data" }}
+  <script>
+    (function () {
+      var readonlyRootsData = JSON.parse(document.getElementById('readonly-roots-data').textContent || '{}');
+      var modalElement = document.getElementById('edit-user-modal');
+      var resetPasswordModalElement = document.getElementById('reset-password-modal');
+      var editButtons = document.querySelectorAll('.edit-user-button');
+      var resetPasswordButtons = document.querySelectorAll('.reset-password-button');
+      var userIdInput = document.getElementById('edit_user_id');
+      var usernameInput = document.getElementById('edit_username');
+      var emailInput = document.getElementById('edit_email');
+      var quotaInput = document.getElementById('edit_quota_gib');
+      var staffInput = document.getElementById('edit_is_staff');
+      var groupsInput = document.querySelectorAll('.edit-group-checkbox');
+      var openRenameGroupButtons = document.querySelectorAll('.open-rename-group-modal');
+      var openDeleteGroupButtons = document.querySelectorAll('.open-delete-group-modal');
+      var renameGroupModalElement = document.getElementById('rename-group-modal');
+      var renameGroupIdInput = document.getElementById('rename_group_id');
+      var renameGroupNameInput = document.getElementById('rename_group_name');
+      var deleteGroupModalElement = document.getElementById('delete-group-modal');
+      var deleteGroupIdInput = document.getElementById('delete_group_id');
+      var deleteGroupName = document.getElementById('delete_group_name');
+      var editActionInput = document.getElementById('edit_user_action');
+      var saveUserButton = document.getElementById('save-user-button');
+      var removeUserButton = document.getElementById('remove-user-button');
+      var resetUserIdInput = document.getElementById('reset_user_id');
+      var resetUsername = document.getElementById('reset_username');
+
+      if (!modalElement || !resetPasswordModalElement || !renameGroupModalElement || !renameGroupIdInput || !renameGroupNameInput || !deleteGroupModalElement || !deleteGroupIdInput || !deleteGroupName || !window.bootstrap || !window.bootstrap.Modal) {
+        return;
+      }
+
+      var editModal = new window.bootstrap.Modal(modalElement);
+      var resetPasswordModal = new window.bootstrap.Modal(resetPasswordModalElement);
+      var renameGroupModal = new window.bootstrap.Modal(renameGroupModalElement);
+      var deleteGroupModal = new window.bootstrap.Modal(deleteGroupModalElement);
+
+      Array.prototype.forEach.call(editButtons, function (button) {
+        button.addEventListener('click', function () {
+          var userId = button.getAttribute('data-user-id') || '';
+          var username = button.getAttribute('data-username') || '';
+          var email = button.getAttribute('data-email') || '';
+          var quotaGib = button.getAttribute('data-quota-gib') || '1.00';
+          var isStaff = button.getAttribute('data-is-staff') === '1';
+          var isSuperuser = button.getAttribute('data-is-superuser') === '1';
+          var canDelete = button.getAttribute('data-can-delete') === '1';
+          var groupIds = (button.getAttribute('data-groups') || '').split(',').filter(Boolean);
+          var userPk = parseInt(button.getAttribute('data-user-pk') || button.getAttribute('data-user-id'), 10);
+          var readonlyRoots = readonlyRootsData[userPk] || [];
+
+          userIdInput.value = userId;
+          usernameInput.value = username;
+          emailInput.value = email;
+          quotaInput.value = quotaGib;
+          staffInput.checked = isStaff;
+          staffInput.disabled = isSuperuser;
+          Array.prototype.forEach.call(groupsInput, function (checkbox) {
+            checkbox.checked = groupIds.indexOf(checkbox.value) !== -1;
+          });
+          editManager.setPaths(readonlyRoots);
+          editActionInput.value = 'update_user';
+          removeUserButton.classList.toggle('d-none', !canDelete);
+
+          editModal.show();
+        });
+      });
+
+      Array.prototype.forEach.call(resetPasswordButtons, function (button) {
+        button.addEventListener('click', function () {
+          resetUserIdInput.value = button.getAttribute('data-user-id') || '';
+          resetUsername.textContent = button.getAttribute('data-username') || 'this user';
+          resetPasswordModal.show();
+        });
+      });
+
+      if (saveUserButton) {
+        saveUserButton.addEventListener('click', function () {
+          editActionInput.value = 'update_user';
+        });
+      }
+
+      if (removeUserButton) {
+        removeUserButton.addEventListener('click', function () {
+          editActionInput.value = 'delete_user';
+        });
+      }
+
+      function fsEscapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      function makeReadonlyRootsManager(inputId, addBtnId, tbodyId, tableId, emptyId, hiddenId) {
+        var inp = document.getElementById(inputId);
+        var addBtn = document.getElementById(addBtnId);
+        var tbody = document.getElementById(tbodyId);
+        var table = document.getElementById(tableId);
+        var empty = document.getElementById(emptyId);
+        var hidden = document.getElementById(hiddenId);
+        var paths = [];
+
+        function render() {
+          tbody.innerHTML = '';
+          if (paths.length === 0) {
+            table.classList.add('d-none');
+            empty.classList.remove('d-none');
+          } else {
+            table.classList.remove('d-none');
+            empty.classList.add('d-none');
+            paths.forEach(function (p, idx) {
+              var tr = document.createElement('tr');
+              tr.innerHTML = '<td class="font-monospace small">' + fsEscapeHtml(p) + '</td>' +
+                '<td class="text-end"><button type="button" class="btn btn-outline-danger btn-sm" data-idx="' + idx + '"><i class="bi bi-x-lg"></i></button></td>';
+              tbody.appendChild(tr);
+            });
+            Array.prototype.forEach.call(tbody.querySelectorAll('button[data-idx]'), function (btn) {
+              btn.addEventListener('click', function () {
+                paths.splice(parseInt(btn.getAttribute('data-idx'), 10), 1);
+                render();
+              });
+            });
+          }
+          hidden.value = paths.join('\n');
+        }
+
+        function addPath() {
+          var val = inp.value.trim();
+          if (val && paths.indexOf(val) === -1) {
+            paths.push(val);
+            inp.value = '';
+            render();
+          }
+        }
+
+        addBtn.addEventListener('click', addPath);
+        inp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); addPath(); }
+        });
+
+        render();
+        return {
+          setPaths: function (newPaths) { paths = newPaths.filter(Boolean).slice(); render(); },
+          reset: function () { paths = []; render(); }
+        };
+      }
+
+      var createManager = makeReadonlyRootsManager(
+        'id_create_readonly_root_input', 'id_create_add_readonly_root',
+        'create_readonly_roots_tbody', 'create_readonly_roots_table',
+        'create_readonly_roots_empty', 'id_create_readonly_storage_roots'
+      );
+      var editManager = makeReadonlyRootsManager(
+        'edit_readonly_root_input', 'edit_add_readonly_root',
+        'edit_readonly_roots_tbody', 'edit_readonly_roots_table',
+        'edit_readonly_roots_empty', 'edit_readonly_storage_roots'
+      );
+
+      var createUserModalElement = document.getElementById('create-user-modal');
+      if (createUserModalElement) {
+        createUserModalElement.addEventListener('show.bs.modal', function () {
+          createManager.reset();
+        });
+      }
+
+      Array.prototype.forEach.call(openRenameGroupButtons, function (button) {
+        button.addEventListener('click', function () {
+          renameGroupIdInput.value = button.getAttribute('data-group-id') || '';
+          renameGroupNameInput.value = button.getAttribute('data-group-name') || '';
+          renameGroupModal.show();
+          window.setTimeout(function () {
+            renameGroupNameInput.focus();
+            renameGroupNameInput.select();
+          }, 120);
+        });
+      });
+
+      Array.prototype.forEach.call(openDeleteGroupButtons, function (button) {
+        button.addEventListener('click', function () {
+          deleteGroupIdInput.value = button.getAttribute('data-group-id') || '';
+          deleteGroupName.textContent = button.getAttribute('data-group-name') || 'this group';
+          deleteGroupModal.show();
+        });
+      });
+    }());
+  </script>
+{% endblock %}

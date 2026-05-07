@@ -1,0 +1,330 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}Admin Todo | FileShare{% endblock %}
+
+{% block extra_css %}
+  {{ block.super }}
+  <style>
+    .todo-description {
+      color: var(--bs-secondary-color);
+      white-space: pre-wrap;
+    }
+
+    .todo-task-button {
+      background: none;
+      border: 0;
+      color: inherit;
+      padding: 0;
+      text-align: left;
+      width: 100%;
+    }
+
+    .todo-task-button:hover .fw-semibold,
+    .todo-task-button:focus-visible .fw-semibold {
+      text-decoration: underline;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+      <div>
+        <h3 class="mb-1">Admin todo</h3>
+        <p class="text-body-secondary mb-0">Shared operational tasks for all admin users.</p>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#create-todo-modal">
+        <i class="bi bi-plus-lg me-1"></i>Add todo
+      </button>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 files-table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Owner</th>
+              <th>Date added</th>
+              <th>Priority</th>
+              <th>Current status</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for todo_item in todo_items %}
+              <tr>
+                <td>
+                  <button
+                    type="button"
+                    class="todo-task-button view-todo-description-button"
+                    data-title="{{ todo_item.title|escape }}"
+                    data-description="{{ todo_item.description|escapejs }}"
+                    aria-label="View description for {{ todo_item.title }}"
+                  >
+                    <div class="fw-semibold">{{ todo_item.title }}</div>
+                  </button>
+                </td>
+                <td>{{ todo_item.owner.username }}</td>
+                <td>{{ todo_item.created_at|date:'Y-m-d H:i' }}</td>
+                <td>{{ todo_item.get_priority_display }}</td>
+                <td>{{ todo_item.get_status_display }}</td>
+                <td class="text-end">
+                  <div class="d-flex justify-content-end gap-2">
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary btn-sm view-todo-description-button"
+                      data-title="{{ todo_item.title|escape }}"
+                      data-description="{{ todo_item.description|escapejs }}"
+                      aria-label="View description for {{ todo_item.title }}"
+                      title="View description"
+                    >
+                      <i class="bi bi-card-text"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-outline-primary btn-sm edit-todo-button"
+                      data-todo-id="{{ todo_item.id }}"
+                      data-owner-id="{{ todo_item.owner_id }}"
+                      data-title="{{ todo_item.title|escape }}"
+                      data-description="{{ todo_item.description|escapejs }}"
+                      data-priority="{{ todo_item.priority }}"
+                      data-status="{{ todo_item.status }}"
+                      aria-label="Edit todo {{ todo_item.title }}"
+                      title="Edit"
+                    >
+                      <i class="bi bi-pencil-square"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-outline-danger btn-sm delete-todo-button"
+                      data-todo-id="{{ todo_item.id }}"
+                      data-title="{{ todo_item.title|escape }}"
+                      aria-label="Delete todo {{ todo_item.title }}"
+                      title="Delete"
+                    >
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="text-center py-4 text-body-secondary">No admin todo items yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="modal fade" id="create-todo-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_todo">
+          <div class="modal-header">
+            <h5 class="modal-title">Add todo</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="id_todo_title" class="form-label">Task</label>
+              <input type="text" class="form-control" id="id_todo_title" name="title" value="{{ create_form.title.value|default:'' }}" required>
+            </div>
+            <div class="mb-3">
+              <label for="id_todo_description" class="form-label">Description</label>
+              <textarea class="form-control" id="id_todo_description" name="description" rows="8">{{ create_form.description.value|default:'' }}</textarea>
+            </div>
+            <div class="mb-3">
+              <label for="id_todo_priority" class="form-label">Priority</label>
+              <select class="form-select" id="id_todo_priority" name="priority">
+                {% for value, label in priority_choices %}
+                  <option value="{{ value }}" {% if create_form.priority.value|stringformat:'s' == value|stringformat:'s' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="id_todo_status" class="form-label">Current status</label>
+              <select class="form-select" id="id_todo_status" name="status">
+                {% for value, label in status_choices %}
+                  <option value="{{ value }}" {% if create_form.status.value == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Add todo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="edit-todo-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" id="edit-todo-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_todo">
+          <input type="hidden" name="todo_id" id="edit_todo_id">
+          <div class="modal-header">
+            <h5 class="modal-title">Edit todo</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="edit_todo_title" class="form-label">Task</label>
+              <input type="text" class="form-control" id="edit_todo_title" name="title" required>
+            </div>
+            <div class="mb-3">
+              <label for="edit_todo_description" class="form-label">Description</label>
+              <textarea class="form-control" id="edit_todo_description" name="description" rows="8"></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="edit_todo_priority" class="form-label">Priority</label>
+              <select class="form-select" id="edit_todo_priority" name="priority">
+                {% for value, label in priority_choices %}
+                  <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="edit_todo_owner" class="form-label">Owner</label>
+              <select class="form-select" id="edit_todo_owner" name="owner_id" required>
+                {% for owner in owner_choices %}
+                  <option value="{{ owner.id }}">{{ owner.username }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="edit_todo_status" class="form-label">Current status</label>
+              <select class="form-select" id="edit_todo_status" name="status">
+                {% for value, label in status_choices %}
+                  <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="delete-todo-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" id="delete-todo-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_todo">
+          <input type="hidden" name="todo_id" id="delete_todo_id">
+          <div class="modal-header">
+            <h5 class="modal-title">Delete todo</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">Delete <span id="delete_todo_title" class="fw-semibold"></span>?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="view-todo-description-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="view_todo_description_title">Description</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="todo-description mb-0" id="view_todo_description_body"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+  {{ block.super }}
+  <script>
+    (function () {
+      var editModalElement = document.getElementById('edit-todo-modal');
+      var deleteModalElement = document.getElementById('delete-todo-modal');
+      var viewDescriptionModalElement = document.getElementById('view-todo-description-modal');
+      var editButtons = document.querySelectorAll('.edit-todo-button');
+      var deleteButtons = document.querySelectorAll('.delete-todo-button');
+      var viewDescriptionButtons = document.querySelectorAll('.view-todo-description-button');
+      var editTodoId = document.getElementById('edit_todo_id');
+      var editTodoTitle = document.getElementById('edit_todo_title');
+      var editTodoDescription = document.getElementById('edit_todo_description');
+      var editTodoPriority = document.getElementById('edit_todo_priority');
+      var editTodoOwner = document.getElementById('edit_todo_owner');
+      var editTodoStatus = document.getElementById('edit_todo_status');
+      var deleteTodoId = document.getElementById('delete_todo_id');
+      var deleteTodoTitle = document.getElementById('delete_todo_title');
+      var viewTodoDescriptionTitle = document.getElementById('view_todo_description_title');
+      var viewTodoDescriptionBody = document.getElementById('view_todo_description_body');
+
+      if (!window.bootstrap || !window.bootstrap.Modal) {
+        return;
+      }
+
+      if (editModalElement && editTodoId && editTodoTitle && editTodoDescription && editTodoPriority && editTodoOwner && editTodoStatus) {
+        var editModal = new window.bootstrap.Modal(editModalElement);
+        Array.prototype.forEach.call(editButtons, function (button) {
+          button.addEventListener('click', function () {
+            editTodoId.value = button.getAttribute('data-todo-id') || '';
+            editTodoTitle.value = button.getAttribute('data-title') || '';
+            editTodoDescription.value = button.getAttribute('data-description') || '';
+            editTodoPriority.value = button.getAttribute('data-priority') || '';
+            editTodoOwner.value = button.getAttribute('data-owner-id') || '';
+            editTodoStatus.value = button.getAttribute('data-status') || '';
+            editModal.show();
+          });
+        });
+      }
+
+      if (viewDescriptionModalElement && viewTodoDescriptionTitle && viewTodoDescriptionBody) {
+        var viewDescriptionModal = new window.bootstrap.Modal(viewDescriptionModalElement);
+        Array.prototype.forEach.call(viewDescriptionButtons, function (button) {
+          button.addEventListener('click', function () {
+            var title = button.getAttribute('data-title') || 'Description';
+            var description = button.getAttribute('data-description') || '';
+
+            viewTodoDescriptionTitle.textContent = title + ' description';
+            viewTodoDescriptionBody.textContent = description || 'No description provided.';
+            viewDescriptionModal.show();
+          });
+        });
+      }
+
+      if (deleteModalElement && deleteTodoId && deleteTodoTitle) {
+        var deleteModal = new window.bootstrap.Modal(deleteModalElement);
+        Array.prototype.forEach.call(deleteButtons, function (button) {
+          button.addEventListener('click', function () {
+            deleteTodoId.value = button.getAttribute('data-todo-id') || '';
+            deleteTodoTitle.textContent = button.getAttribute('data-title') || '';
+            deleteModal.show();
+          });
+        });
+      }
+    }());
+  </script>
+{% endblock %}

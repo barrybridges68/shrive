@@ -1,0 +1,260 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}{% if is_own %}My shares{% else %}Shares for {{ subject_user.username }}{% endif %} | FileShare{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      {% if is_own %}
+        <h3 class="mb-1">My shares</h3>
+        <div class="text-body-secondary">All items you are currently sharing — with people, groups, and public links.</div>
+      {% else %}
+        <h3 class="mb-1">Shares for {{ subject_user.username }}</h3>
+        <div class="text-body-secondary">All items shared by this user — with people, groups, and public links.</div>
+        <div class="mt-2">
+          <a href="{% url 'drive:admin-users' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Back to users
+          </a>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ── Shared with people ── #}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="mb-3"><i class="bi bi-person-check me-2 text-primary"></i>Shared with people</h5>
+      {% if user_share_rows %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 files-table">
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th style="width: 12%;">Shared with</th>
+                <th style="width: 9%;">Permission</th>
+                <th style="width: 8%;">Status</th>
+                <th style="width: 14%;">Expires</th>
+                <th style="width: 14%;">Created</th>
+                <th style="width: 8%;" class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in user_share_rows %}
+                <tr>
+                  <td class="font-monospace small">{{ row.path }}</td>
+                  <td>{{ row.target }}</td>
+                  <td><span class="badge text-bg-secondary">{{ row.permission }}</span></td>
+                  <td>
+                    {% if row.status == 'expired' %}
+                      <span class="badge text-bg-danger">Expired</span>
+                    {% else %}
+                      <span class="badge text-bg-success">Active</span>
+                    {% endif %}
+                  </td>
+                  <td class="small text-body-secondary">
+                    {% if row.expires_at %}{{ row.expires_at|date:'Y-m-d H:i' }}{% else %}Never{% endif %}
+                  </td>
+                  <td class="small text-body-secondary">{{ row.created_at|date:'Y-m-d H:i' }}</td>
+                  <td class="text-end">
+                    <button type="button" class="btn btn-outline-danger btn-sm open-remove-modal"
+                      data-action="remove_user_share"
+                      data-share-id="{{ row.id }}"
+                      data-description="{{ row.path|escape }} → {{ row.target|escape }}"
+                      title="Remove share">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-body-secondary small py-2">No individual user shares.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ── Shared with groups ── #}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="mb-3"><i class="bi bi-people me-2 text-info"></i>Shared with groups</h5>
+      {% if group_share_rows %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 files-table">
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th style="width: 12%;">Group</th>
+                <th style="width: 9%;">Permission</th>
+                <th style="width: 8%;">Status</th>
+                <th style="width: 14%;">Expires</th>
+                <th style="width: 14%;">Created</th>
+                <th style="width: 8%;" class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in group_share_rows %}
+                <tr>
+                  <td class="font-monospace small">{{ row.path }}</td>
+                  <td>{{ row.target }}</td>
+                  <td><span class="badge text-bg-secondary">{{ row.permission }}</span></td>
+                  <td>
+                    {% if row.status == 'expired' %}
+                      <span class="badge text-bg-danger">Expired</span>
+                    {% else %}
+                      <span class="badge text-bg-success">Active</span>
+                    {% endif %}
+                  </td>
+                  <td class="small text-body-secondary">
+                    {% if row.expires_at %}{{ row.expires_at|date:'Y-m-d H:i' }}{% else %}Never{% endif %}
+                  </td>
+                  <td class="small text-body-secondary">{{ row.created_at|date:'Y-m-d H:i' }}</td>
+                  <td class="text-end">
+                    <button type="button" class="btn btn-outline-danger btn-sm open-remove-modal"
+                      data-action="remove_group_share"
+                      data-share-id="{{ row.id }}"
+                      data-description="{{ row.path|escape }} → {{ row.target|escape }}"
+                      title="Remove share">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-body-secondary small py-2">No group shares.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ── Public links ── #}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="mb-3"><i class="bi bi-link-45deg me-2 text-warning"></i>Public shareable links</h5>
+      {% if public_link_rows %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 files-table">
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th style="width: 8%;">Status</th>
+                <th style="width: 14%;">Expires</th>
+                <th style="width: 14%;">Created</th>
+                <th style="width: 20%;">Link</th>
+                <th style="width: 8%;" class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in public_link_rows %}
+                <tr>
+                  <td class="font-monospace small">{{ row.path }}</td>
+                  <td>
+                    {% if row.status == 'expired' %}
+                      <span class="badge text-bg-danger">Expired</span>
+                    {% else %}
+                      <span class="badge text-bg-success">Active</span>
+                    {% endif %}
+                  </td>
+                  <td class="small text-body-secondary">
+                    {% if row.expires_at %}{{ row.expires_at|date:'Y-m-d H:i' }}{% else %}Never{% endif %}
+                  </td>
+                  <td class="small text-body-secondary">{{ row.created_at|date:'Y-m-d H:i' }}</td>
+                  <td>
+                    {% if row.status == 'active' %}
+                      <div class="d-flex gap-2 align-items-center">
+                        <a href="{{ row.url }}" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener" title="Open link">
+                          <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                        <button type="button" class="btn btn-outline-secondary btn-sm copy-link-btn" data-link="{{ row.url }}" title="Copy link">
+                          <i class="bi bi-clipboard"></i>
+                        </button>
+                        <span class="font-monospace small text-truncate text-body-secondary" style="max-width: 12ch;" title="{{ row.url }}">{{ row.url }}</span>
+                      </div>
+                    {% else %}
+                      <span class="text-body-secondary small">—</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end">
+                    <button type="button" class="btn btn-outline-danger btn-sm open-remove-modal"
+                      data-action="remove_public_link"
+                      data-share-id="{{ row.id }}"
+                      data-description="{{ row.path|escape }}"
+                      title="Remove link">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-body-secondary small py-2">No public shareable links.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ── Remove confirmation modal ── #}
+  <div class="modal fade" id="remove-share-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" id="remove-share-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" id="remove_share_action">
+          <input type="hidden" name="share_id" id="remove_share_id">
+          <div class="modal-header">
+            <h5 class="modal-title">Remove share</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">Remove share for <span class="fw-semibold" id="remove_share_description"></span>? This cannot be undone.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger">Remove</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+  {{ block.super }}
+  <script>
+    (function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.copy-link-btn'), function (btn) {
+        btn.addEventListener('click', function () {
+          var link = btn.getAttribute('data-link') || '';
+          if (!link || !navigator.clipboard) return;
+          navigator.clipboard.writeText(link).then(function () {
+            var icon = btn.querySelector('i');
+            if (icon) {
+              icon.className = 'bi bi-clipboard-check';
+              setTimeout(function () { icon.className = 'bi bi-clipboard'; }, 2000);
+            }
+          });
+        });
+      });
+
+      var removeModalEl = document.getElementById('remove-share-modal');
+      var removeActionInput = document.getElementById('remove_share_action');
+      var removeIdInput = document.getElementById('remove_share_id');
+      var removeDescription = document.getElementById('remove_share_description');
+      if (removeModalEl && window.bootstrap && window.bootstrap.Modal) {
+        var removeModal = new window.bootstrap.Modal(removeModalEl);
+        Array.prototype.forEach.call(document.querySelectorAll('.open-remove-modal'), function (btn) {
+          btn.addEventListener('click', function () {
+            removeActionInput.value = btn.getAttribute('data-action') || '';
+            removeIdInput.value = btn.getAttribute('data-share-id') || '';
+            removeDescription.textContent = btn.getAttribute('data-description') || '';
+            removeModal.show();
+          });
+        });
+      }
+    }());
+  </script>
+{% endblock %}

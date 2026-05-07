@@ -1,0 +1,51 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}Shared with me | FileShare{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h3 class="mb-1">Shared with me</h3>
+      <p class="text-body-secondary mb-0">Folders and files another user has granted to your account.</p>
+    </div>
+  </section>
+
+  <div class="row g-4">
+    {% for share in shares %}
+      <div class="col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+              <span class="file-icon {% if share.is_dir %}folder{% else %}file{% endif %}">
+                <i class="bi {% if share.is_dir %}bi-folder-fill{% else %}bi-file-earmark-fill{% endif %}"></i>
+              </span>
+              <span class="badge text-bg-secondary">{{ share.permission }}</span>
+            </div>
+            <h5 class="mb-2">{{ share.name }}</h5>
+            <div class="text-body-secondary small mb-2">Owner: {{ share.owner }}</div>
+            <div class="text-body-secondary small mb-4">
+              Expires:
+              {% if share.expires_at %}
+                {{ share.expires_at|date:'Y-m-d H:i' }}
+              {% else %}
+                Never
+              {% endif %}
+            </div>
+            <div class="mt-auto d-flex gap-2 justify-content-end">
+              <a href="{{ share.browse_url }}" class="btn btn-primary btn-sm" aria-label="Open" title="Open"><i class="bi bi-box-arrow-up-right"></i></a>
+              {% if share.download_url %}
+                <a href="{{ share.download_url }}" class="btn btn-outline-secondary btn-sm" aria-label="Download" title="Download" {% if share.is_dir %}data-folder-download="true" data-folder-name="{{ share.name|escape }}"{% endif %}><i class="bi bi-download"></i></a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-body text-body-secondary">No items have been shared with this account yet.</div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

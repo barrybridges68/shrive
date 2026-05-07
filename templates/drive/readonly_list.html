@@ -1,0 +1,36 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}Read only libraries | FileShare{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h3 class="mb-1">Read only libraries</h3>
+      <p class="text-body-secondary mb-0">Configured folders elsewhere on the system that can be browsed and downloaded without allowing uploads or edits.</p>
+    </div>
+  </section>
+
+  <div class="row g-4">
+    {% for root in roots %}
+      <div class="col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body d-flex flex-column">
+            <span class="file-icon folder mb-3"><i class="bi bi-folder-fill"></i></span>
+            <h5 class="mb-2">{{ root.name }}</h5>
+            <div class="text-body-secondary small mb-4">{{ root.path }}</div>
+            <div class="mt-auto d-flex gap-2 justify-content-end">
+              <a href="{{ root.browse_url }}" class="btn btn-primary btn-sm">Browse</a>
+              <a href="{{ root.download_url }}" class="btn btn-outline-secondary btn-sm" aria-label="Download" title="Download" data-folder-download="true" data-folder-name="{{ root.name|escape }}"><i class="bi bi-download"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-body text-body-secondary">No read only roots are configured yet. Set FILESHARE_READONLY_ROOTS in settings.py.</div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

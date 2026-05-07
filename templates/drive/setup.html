@@ -1,0 +1,41 @@
+{% extends 'drive/base.html' %}
+{% load static %}
+
+{% block title %}Initial setup | FileShare{% endblock %}
+
+{% block auth_content %}
+  <div class="auth-wrapper">
+    <form method="post" class="auth-form-card">
+      {% csrf_token %}
+      <div class="auth-box shadow-lg">
+        <a href="{% url 'drive:setup' %}" class="auth-logo mb-4">
+          <img src="{% static 'assets/images/logo-dark.svg' %}" alt="FileShare">
+        </a>
+        <h4 class="mb-3">Initial admin setup</h4>
+        <p class="text-body-secondary mb-4">The first successful setup creates the system administrator account that manages quotas and users.</p>
+        {{ form.non_field_errors }}
+        <div class="mb-3">
+          <label class="form-label" for="id_username">Admin username</label>
+          {{ form.username }}
+          {{ form.username.errors }}
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="id_email">Email</label>
+          {{ form.email }}
+          {{ form.email.errors }}
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="id_password1">Password</label>
+          {{ form.password1 }}
+          {{ form.password1.errors }}
+        </div>
+        <div class="mb-4">
+          <label class="form-label" for="id_password2">Confirm password</label>
+          {{ form.password2 }}
+          {{ form.password2.errors }}
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Create admin</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

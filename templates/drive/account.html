@@ -1,0 +1,80 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}Account | FileShare{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="mb-3">My stats</h5>
+      <div class="row g-3">
+        <div class="col-12 col-md-6 col-xl-3">
+          <section class="card border-0 bg-body-tertiary h-100">
+            <div class="card-body">
+              <div class="text-body-secondary small">Storage usage</div>
+              <div class="fw-semibold">{{ stats.used_bytes|filesizeformat }} / {{ stats.quota_bytes|filesizeformat }}</div>
+              <div class="progress mt-2" role="progressbar" aria-label="Usage">
+                <div class="progress-bar" style="width: {{ stats.usage_percent }}%"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <section class="card border-0 bg-body-tertiary h-100">
+            <div class="card-body">
+              <div class="text-body-secondary small">Uploaded total</div>
+              <div class="fw-semibold">{{ stats.uploaded_bytes|filesizeformat }}</div>
+            </div>
+          </section>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <section class="card border-0 bg-body-tertiary h-100">
+            <div class="card-body">
+              <div class="text-body-secondary small">Downloaded total</div>
+              <div class="fw-semibold">{{ stats.downloaded_bytes|filesizeformat }}</div>
+            </div>
+          </section>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <section class="card border-0 bg-body-tertiary h-100">
+            <div class="card-body">
+              <div class="text-body-secondary small">Last login</div>
+              <div class="fw-semibold">{% if stats.last_login %}{{ stats.last_login|date:'Y-m-d H:i' }}{% else %}<span class="text-body-secondary">Never</span>{% endif %}</div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-lg-6">
+          <div class="small text-body-secondary">Last upload: {% if stats.last_upload_at %}{{ stats.last_upload_at|date:'Y-m-d H:i' }}{% else %}Never{% endif %}</div>
+        </div>
+        <div class="col-12 col-lg-6">
+          <div class="small text-body-secondary">Last download: {% if stats.last_download_at %}{{ stats.last_download_at|date:'Y-m-d H:i' }}{% else %}Never{% endif %}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="mb-3">My password</h5>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <div class="col-12 col-lg-4">
+          <label for="id_old_password" class="form-label">Current password</label>
+          {{ form.old_password }}
+        </div>
+        <div class="col-12 col-lg-4">
+          <label for="id_new_password1" class="form-label">New password</label>
+          {{ form.new_password1 }}
+        </div>
+        <div class="col-12 col-lg-4">
+          <label for="id_new_password2" class="form-label">Confirm new password</label>
+          {{ form.new_password2 }}
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-outline-primary">Change password</button>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

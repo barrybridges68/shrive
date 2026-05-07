@@ -1,0 +1,12 @@
+.ticker-wrapper {
+  overflow: hidden;
+}
+
+.ticker-wrapper ul {
+  display: flex;
+  align-items: center;
+}
+
+.ticker-wrapper ul {
+  list-style-type: none;
+}

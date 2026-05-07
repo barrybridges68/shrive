@@ -1,0 +1,177 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}FileShare{% endblock %}</title>
+    <link rel="shortcut icon" href="{% static 'assets/images/floppy.svg' %}">
+    <link rel="stylesheet" href="{% static 'assets/fonts/bootstrap/bootstrap-icons.css' %}">
+    <link rel="stylesheet" href="{% static 'assets/css/animate.css' %}">
+    <link rel="stylesheet" href="{% static 'assets/css/main.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/fileshare.css' %}">
+    {% block extra_css %}{% endblock %}
+  </head>
+  <body class="fileshare-body">
+    <header class="app-header d-flex align-items-center justify-content-between px-3 py-2">
+      <div class="d-flex align-items-center gap-3">
+        <a href="{% url 'drive:home' %}" class="d-flex align-items-center gap-2 text-decoration-none text-reset">
+          <!-- <img src="{% static 'assets/images/logo.svg' %}" class="logo" alt="FileShare"> -->
+          <div>
+            <div class="fw-semibold">Home Drive</div>
+            <div class="small text-body-secondary">Drive-style workspace</div>
+          </div>
+        </a>
+      </div>
+      {% if user.is_authenticated %}
+        <div class="d-flex align-items-center gap-3">
+          {% if user_avatar_url %}
+            <img
+              src="{{ user_avatar_url }}"
+              alt="{{ user.username }} avatar"
+              class="rounded-circle border border-light-subtle"
+              width="36"
+              height="36"
+              loading="lazy"
+            >
+          {% else %}
+            <span class="fs-4 text-body-secondary" aria-hidden="true"><i class="bi bi-person-circle"></i></span>
+          {% endif %}
+          <div class="text-end d-none d-md-block">
+            <div class="fw-semibold">{{ user.username }}</div>
+            <div class="small text-body-secondary">{% if user.is_superuser %}System admin{% elif user.is_staff %}Staff{% else %}Standard user{% endif %}</div>
+          </div>
+          <form method="post" action="{% url 'drive:logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-light btn-sm">Sign out</button>
+          </form>
+        </div>
+      {% endif %}
+    </header>
+
+    <div class="container-fluid py-4">
+      {% if user.is_authenticated %}
+        <div class="row g-4">
+          <aside class="col-xl-3 col-xxl-2">
+            <div class="card border-0 shadow-sm h-100">
+              <div class="card-body">
+                <div class="list-group fileshare-nav gap-2">
+                  <a href="{% url 'drive:space' %}" class="list-group-item list-group-item-action {% if active_nav == 'space' %}active{% endif %}">
+                    <i class="bi bi-hdd-network me-2"></i>My Drive
+                  </a>
+                  <a href="{% url 'drive:my-shares' %}" class="list-group-item list-group-item-action {% if active_nav == 'my-shares' %}active{% endif %}">
+                    <i class="bi bi-share me-2"></i>My shares
+                  </a>
+                  <a href="{% url 'drive:shared-list' %}" class="list-group-item list-group-item-action {% if active_nav == 'shared' %}active{% endif %}">
+                    <i class="bi bi-people me-2"></i>Shared with me
+                    {% if incoming_share_count %}<span class="badge rounded-pill text-bg-primary float-end">{{ incoming_share_count }}</span>{% endif %}
+                  </a>
+                  {% if readonly_root_count %}
+                    <a href="{% url 'drive:readonly-list' %}" class="list-group-item list-group-item-action {% if active_nav == 'readonly' %}active{% endif %}">
+                      <i class="bi bi-eye me-2"></i>Read only libraries
+                      <span class="badge rounded-pill text-bg-secondary float-end">{{ readonly_root_count }}</span>
+                    </a>
+                  {% endif %}
+                  {% if not user.is_staff %}
+                    <a href="{% url 'drive:account' %}" class="list-group-item list-group-item-action {% if active_nav == 'account' %}active{% endif %}">
+                      <i class="bi bi-person me-2"></i>My account
+                    </a>
+                  {% endif %}
+                  {% if user.is_staff %}
+                    <a href="{% url 'drive:admin-users' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-users' %}active{% endif %}">
+                      <i class="bi bi-people-fill me-2"></i>Users & groups
+                    </a>
+                    <a href="{% url 'drive:admin-settings' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-settings' %}active{% endif %}">
+                      <i class="bi bi-sliders me-2"></i>Admin settings
+                    </a>
+                    {% if admin_todo_enabled %}
+                      <a href="{% url 'drive:admin-todo' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-todo' %}active{% endif %}">
+                        <i class="bi bi-list-check me-2"></i>Admin todo
+                        {% if admin_todo_count %}<span class="badge rounded-pill text-bg-primary float-end">{{ admin_todo_count }}</span>{% endif %}
+                      </a>
+                    {% endif %}
+                    <a href="{% url 'drive:admin-stats' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-stats' %}active{% endif %}">
+                      <i class="bi bi-graph-up me-2"></i>Admin stats
+                    </a>
+                    <a href="{% url 'drive:admin-logs' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-logs' %}active{% endif %}">
+                      <i class="bi bi-journal-text me-2"></i>Audit logs
+                    </a>
+                  {% endif %}
+                </div>
+                {% if show_quota %}
+                  <div class="quota-card mt-4 p-3 rounded-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <span class="fw-semibold">Storage usage</span>
+                      <span class="small">{{ used_bytes|filesizeformat }} / {{ quota_bytes|filesizeformat }}</span>
+                    </div>
+                    <div class="progress" role="progressbar" aria-label="Storage usage">
+                      <div class="progress-bar" style="width: {{ usage_percent }}%"></div>
+                    </div>
+                    <div class="small text-body-secondary mt-2">Limits are configured per user by administrators.</div>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </aside>
+          <main class="col-xl-9 col-xxl-10">
+            {% include 'drive/messages.html' %}
+            {% block content %}{% endblock %}
+          </main>
+        </div>
+      {% else %}
+        <div class="auth-shell">
+          {% include 'drive/messages.html' %}
+          {% block auth_content %}{% endblock %}
+        </div>
+      {% endif %}
+    </div>
+
+    <script src="{% static 'assets/js/jquery.min.js' %}"></script>
+    <script src="{% static 'assets/js/bootstrap.bundle.min.js' %}"></script>
+    <script>
+      (function () {
+        var noticeId = 'folder-download-notice';
+
+        function showFolderDownloadNotice(folderName) {
+          var existingNotice = document.getElementById(noticeId);
+          if (existingNotice) {
+            existingNotice.remove();
+          }
+
+          var notice = document.createElement('div');
+          notice.id = noticeId;
+          notice.className = 'alert alert-info shadow-sm';
+          notice.setAttribute('role', 'status');
+          notice.setAttribute('aria-live', 'polite');
+          notice.style.position = 'fixed';
+          notice.style.top = '1rem';
+          notice.style.right = '1rem';
+          notice.style.zIndex = '1080';
+          notice.style.maxWidth = '28rem';
+          notice.style.backgroundColor = 'rgba(13, 202, 240, 0.96)';
+          notice.style.borderColor = 'rgba(13, 202, 240, 1)';
+          notice.style.color = '#052c38';
+          notice.innerHTML = '<strong>Preparing folder download</strong><div class="small mt-1">' +
+            (folderName ? folderName + ' is being zipped first.' : 'This folder is being zipped first.') +
+            ' Please wait.</div>';
+
+          document.body.appendChild(notice);
+          window.setTimeout(function () {
+            if (notice.parentNode) {
+              notice.parentNode.removeChild(notice);
+            }
+          }, 8000);
+        }
+
+        document.addEventListener('click', function (event) {
+          var link = event.target.closest('[data-folder-download="true"]');
+          if (!link) {
+            return;
+          }
+          showFolderDownloadNotice(link.getAttribute('data-folder-name') || 'Folder');
+        });
+      })();
+    </script>
+    {% block extra_js %}{% endblock %}
+  </body>
+</html>

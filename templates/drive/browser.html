@@ -1,0 +1,1490 @@
+{% extends 'drive/base.html' %}
+
+{% block title %}{{ page_title }} | FileShare{% endblock %}
+
+{% block extra_css %}
+  <style>
+    .upload-dropzone {
+      border: 2px dashed rgba(255, 255, 255, 0.25);
+      border-radius: 0.75rem;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--bs-secondary-color);
+      text-align: center;
+      width: min(22rem, 100%);
+      aspect-ratio: 1 / 1;
+      padding: 1rem;
+      margin: 0.75rem auto 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+      cursor: pointer;
+    }
+
+    .upload-dropzone.is-active {
+      border-color: var(--bs-success);
+      background: rgba(var(--bs-success-rgb), 0.12);
+      color: var(--bs-success);
+    }
+
+    .upload-dropzone.disabled {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    .upload-dropzone .bi {
+      font-size: 4em;
+      margin-right: 0;
+      margin-bottom: 0.35rem;
+      display: block;
+    }
+
+    .browser-actions-col {
+      width: 20%;
+    }
+
+    .browser-updated-col {
+      width: 15%;
+    }
+
+    .browser-size-col {
+      width: 12%;
+    }
+
+    .action-icon-btn {
+      min-width: 2rem;
+      padding: 0.25rem 0.45rem;
+    }
+
+    .action-menu-toggle {
+      min-width: 2rem;
+      padding: 0.25rem 0.45rem;
+    }
+
+    .click-only-actions.dropdown:hover > .dropdown-menu {
+      display: none !important;
+    }
+
+    .click-only-actions.dropdown > .dropdown-menu.show {
+      display: block !important;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-center">
+      <div>
+        <h3 class="mb-1">{{ page_title }}</h3>
+        <div class="text-body-secondary">{{ page_description }}</div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for crumb in breadcrumbs %}
+          <a href="{{ crumb.url }}" class="btn btn-outline-secondary btn-sm">{{ crumb.label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {% if can_upload or can_create_folder %}
+    <section class="card border-0 shadow-sm mb-4">
+      <div class="card-body">
+        <div class="d-flex flex-column gap-4">
+          {% if can_upload %}
+            <div>
+              <form method="post" enctype="multipart/form-data" id="upload-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="upload">
+                <input type="file" name="file" id="upload-file-input" class="d-none" multiple>
+                <input type="file" name="folder" id="upload-folder-input" class="d-none" webkitdirectory directory multiple>
+                <div class="upload-dropzone" id="upload-dropzone" tabindex="0" role="button" aria-label="Drag and drop files here or press Enter to browse">
+                  <i class="bi bi-cloud-arrow-up me-1"></i>
+                  Drag files or folders here to upload, or click to browse.
+                </div>
+                <div class="mt-3 d-none" id="upload-progress-wrap" aria-live="polite">
+                  <div class="d-flex justify-content-between align-items-center small mb-1">
+                    <span id="upload-progress-label">Uploading...</span>
+                    <span id="upload-progress-value">0%</span>
+                  </div>
+                  <div class="progress" role="progressbar" aria-label="Upload progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="upload-progress-bar" style="width: 0%"></div>
+                  </div>
+                </div>
+              </form>
+            </div>
+          {% endif %}
+
+          {% if can_create_folder %}
+            <div>
+              <div class="d-flex flex-wrap justify-content-center gap-2">
+                {% if can_upload %}
+                  <button type="button" class="btn btn-outline-success" id="upload-picker-button">
+                    <i class="bi bi-cloud-upload me-1"></i>Upload
+                  </button>
+                {% endif %}
+                <button type="button" class="btn btn-primary" id="create-folder-button">
+                  <i class="bi bi-folder-plus me-1"></i>Create folder
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="create-text-file-button">
+                  <i class="bi bi-file-earmark-text me-1"></i>Create text file
+                </button>
+              </div>
+              <form method="post" id="create-folder-form" class="d-none">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_folder">
+                <input type="hidden" name="name" id="create-folder-name">
+              </form>
+              <form method="post" id="create-text-file-form" class="d-none">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_text_file">
+                <input type="hidden" name="name" id="create-text-file-name">
+              </form>
+
+              <div class="modal fade" id="create-text-file-modal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title">Create text file</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                      <label for="create-text-file-modal-name" class="form-label">File name</label>
+                      <input type="text" id="create-text-file-modal-name" class="form-control" placeholder="notes.txt" autocomplete="off">
+                      <div class="form-text">If no extension is provided, .txt will be used.</div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                      <button type="button" class="btn btn-primary" id="create-text-file-confirm">Create</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="create-folder-modal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title">Create folder</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                      <label for="create-folder-modal-name" class="form-label">Folder name</label>
+                      <input type="text" id="create-folder-modal-name" class="form-control" placeholder="new-folder" autocomplete="off">
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                      <button type="button" class="btn btn-primary" id="create-folder-confirm">Create</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {% if can_upload %}
+                <div class="modal fade" id="upload-mode-modal" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Upload</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body">
+                        <p class="text-body-secondary mb-0">Choose what you want to upload.</p>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-outline-primary" id="upload-mode-files">Files</button>
+                        <button type="button" class="btn btn-success" id="upload-mode-folder">Folder</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body border-bottom py-3">
+      <div class="d-flex flex-wrap gap-2 justify-content-end">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="bulk-copy-selected" disabled>
+          <i class="bi bi-copy me-1"></i>Copy selected
+        </button>
+        {% if can_delete %}
+          <button type="button" class="btn btn-outline-warning btn-sm" id="bulk-cut-selected" disabled>
+            <i class="bi bi-scissors me-1"></i>Cut selected
+          </button>
+        {% endif %}
+        {% if can_paste %}
+          <button type="button" class="btn btn-primary btn-sm" id="paste-clipboard" {% if not clipboard_count %}disabled{% endif %}>
+            <i class="bi bi-clipboard-check me-1"></i>Paste{% if clipboard_count %} ({{ clipboard_count }}){% endif %}
+          </button>
+        {% endif %}
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="bulk-download-selected" disabled>
+          <i class="bi bi-download me-1"></i>Download selected
+        </button>
+        {% if can_delete %}
+          <button type="button" class="btn btn-outline-danger btn-sm" id="bulk-delete-selected" disabled>
+            <i class="bi bi-trash me-1"></i>Delete selected
+          </button>
+        {% endif %}
+        {% if can_share %}
+          <button type="button" class="btn btn-primary btn-sm" id="bulk-share-selected" disabled>
+            <i class="bi bi-share me-1"></i>Share selected
+          </button>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 files-table">
+          <thead>
+            <tr>
+              <th class="text-center" style="width: 42px;">
+                <input type="checkbox" class="form-check-input" id="select-all-entries" aria-label="Select all items">
+              </th>
+              <th>Name</th>
+              <th class="browser-size-col">Size</th>
+              <th class="browser-updated-col">Updated</th>
+              <th class="browser-actions-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if parent_url %}
+              <tr>
+                <td></td>
+                <td colspan="4">
+                  <a href="{{ parent_url }}" class="text-decoration-none">
+                    <i class="bi bi-arrow-up-circle me-2"></i>Back to parent folder
+                  </a>
+                </td>
+              </tr>
+            {% endif %}
+            {% for entry in entries %}
+              <tr>
+                <td class="text-center align-middle">
+                  <input
+                    type="checkbox"
+                    class="form-check-input select-entry-checkbox"
+                    aria-label="Select {{ entry.name }}"
+                    data-item-name="{{ entry.name|escape }}"
+                    data-download-url="{{ entry.download_url|default:''|escape }}"
+                    data-scope-path-token="{{ entry.scope_path_token|escape }}"
+                    data-owner-path-token="{{ entry.owner_path_token|escape }}"
+                  >
+                </td>
+                <td>
+                  <div class="d-flex align-items-center gap-3">
+                    {% if entry.is_dir and entry.browse_url %}
+                      <a href="{{ entry.browse_url }}" class="file-icon {{ entry.icon_tone|default:'file' }}" aria-label="Open folder {{ entry.name }}" title="Open folder {{ entry.name }}">
+                        {% if entry.thumbnail_url %}
+                          <img src="{{ entry.thumbnail_url }}" alt="{{ entry.name }} thumbnail" class="file-thumb-image">
+                        {% else %}
+                          <i class="bi {{ entry.icon_name|default:'bi-file-earmark-fill' }}"></i>
+                        {% endif %}
+                      </a>
+                    {% elif entry.open_url %}
+                      <a href="{{ entry.open_url }}" class="file-icon {{ entry.icon_tone|default:'file' }}" target="_blank" rel="noopener" aria-label="Open file {{ entry.name }}" title="Open file {{ entry.name }}">
+                        {% if entry.thumbnail_url %}
+                          <img src="{{ entry.thumbnail_url }}" alt="{{ entry.name }} thumbnail" class="file-thumb-image">
+                        {% else %}
+                          <i class="bi {{ entry.icon_name|default:'bi-file-earmark-fill' }}"></i>
+                        {% endif %}
+                      </a>
+                    {% elif entry.download_url %}
+                      <a href="{{ entry.download_url }}" class="file-icon {{ entry.icon_tone|default:'file' }}" aria-label="Download file {{ entry.name }}" title="Download file {{ entry.name }}">
+                        {% if entry.thumbnail_url %}
+                          <img src="{{ entry.thumbnail_url }}" alt="{{ entry.name }} thumbnail" class="file-thumb-image">
+                        {% else %}
+                          <i class="bi {{ entry.icon_name|default:'bi-file-earmark-fill' }}"></i>
+                        {% endif %}
+                      </a>
+                    {% else %}
+                      <span class="file-icon {{ entry.icon_tone|default:'file' }}">
+                        {% if entry.thumbnail_url %}
+                          <img src="{{ entry.thumbnail_url }}" alt="{{ entry.name }} thumbnail" class="file-thumb-image">
+                        {% else %}
+                          <i class="bi {{ entry.icon_name|default:'bi-file-earmark-fill' }}"></i>
+                        {% endif %}
+                      </span>
+                    {% endif %}
+                    <div>
+                      {% if entry.is_dir %}
+                        <a href="{{ entry.browse_url }}" class="fw-semibold text-decoration-none">{{ entry.name }}</a>
+                      {% elif entry.download_url %}
+                        <a href="{{ entry.download_url }}" class="fw-semibold text-decoration-none">{{ entry.name }}</a>
+                      {% else %}
+                        <span class="fw-semibold">{{ entry.name }}</span>
+                      {% endif %}
+                      {% if entry.share_list %}
+                        <div class="small text-body-secondary mt-1">
+                          Shared with:
+                          {% for share in entry.share_list %}
+                            <span class="badge text-bg-secondary me-1">
+                              {{ share.username }} · {{ share.permission }}
+                              {% if share.expires_at %} · expires {{ share.expires_at|date:'Y-m-d H:i' }}{% endif %}
+                            </span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                </td>
+                <td>{% if entry.size is not None %}{{ entry.size|filesizeformat }}{% else %}Folder{% endif %}</td>
+                <td>{{ entry.modified_at|date:'Y-m-d H:i' }}</td>
+                <td>
+                  <div class="d-flex justify-content-end">
+                    <div class="dropdown click-only-actions">
+                      <button
+                        class="btn btn-outline-secondary btn-sm action-menu-toggle"
+                        type="button"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        aria-label="Actions"
+                        title="Actions"
+                      >
+                        <i class="bi bi-three-dots-vertical"></i>
+                      </button>
+                      <ul class="dropdown-menu dropdown-menu-end">
+                        {% if entry.open_url %}
+                          <li>
+                            <a href="{{ entry.open_url }}" class="dropdown-item" target="_blank" rel="noopener">
+                              <i class="bi bi-box-arrow-up-right me-2"></i>Open
+                            </a>
+                          </li>
+                        {% endif %}
+                        {% if entry.download_url %}
+                          <li>
+                            <a href="{{ entry.download_url }}" class="dropdown-item" {% if entry.is_dir %}data-folder-download="true" data-folder-name="{{ entry.name|escape }}"{% endif %}>
+                              <i class="bi bi-download me-2"></i>Download
+                            </a>
+                          </li>
+                        {% endif %}
+                        {% if entry.is_dir and entry.browse_url %}
+                          <li>
+                            <a href="{{ entry.browse_url }}" class="dropdown-item">
+                              <i class="bi bi-folder2-open me-2"></i>Browse
+                            </a>
+                          </li>
+                        {% endif %}
+                        <li>
+                          <button
+                            type="button"
+                            class="dropdown-item copy-item-button"
+                            data-path-token="{{ entry.scope_path_token|escape }}"
+                          >
+                            <i class="bi bi-copy me-2"></i>Copy
+                          </button>
+                        </li>
+                        {% if can_delete %}
+                          <li>
+                            <button
+                              type="button"
+                              class="dropdown-item cut-item-button"
+                              data-path-token="{{ entry.scope_path_token|escape }}"
+                            >
+                              <i class="bi bi-scissors me-2"></i>Cut
+                            </button>
+                          </li>
+                        {% endif %}
+                        {% if can_share or can_delete %}
+                          <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        {% if can_share %}
+                          <li>
+                            <button
+                              type="button"
+                              class="dropdown-item share-item-button"
+                              data-item-name="{{ entry.name|escape }}"
+                              data-path-token="{{ entry.owner_path_token|escape }}"
+                            >
+                              <i class="bi bi-share me-2"></i>Share
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              type="button"
+                              class="dropdown-item create-public-link-button"
+                              data-path-token="{{ entry.owner_path_token|escape }}"
+                            >
+                              <i class="bi bi-link-45deg me-2"></i>Create shareable link
+                            </button>
+                          </li>
+                        {% endif %}
+                        {% if can_delete %}
+                          <li>
+                            <button
+                              type="button"
+                              class="dropdown-item text-danger delete-item-button"
+                              data-item-name="{{ entry.name|escape }}"
+                              data-path-token="{{ entry.scope_path_token|escape }}"
+                            >
+                              <i class="bi bi-trash me-2"></i>Delete
+                            </button>
+                          </li>
+                        {% endif %}
+                      </ul>
+                    </div>
+                  </div>
+                  {% if can_share %}
+                    {% for share in entry.share_records %}
+                      <form method="post" class="d-inline-block mt-2 me-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="revoke">
+                        <input type="hidden" name="share_id" value="{{ share.id }}">
+                        <button type="submit" class="btn btn-outline-warning btn-sm">Revoke {{ share.target_user.username }}</button>
+                      </form>
+                    {% endfor %}
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="5" class="text-center py-5 text-body-secondary">This folder is empty.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <form method="post" id="copy-selection-form" class="d-none">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="copy_selection">
+    <div id="copy-selection-token-inputs"></div>
+  </form>
+
+  {% if can_delete %}
+    <form method="post" id="cut-selection-form" class="d-none">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="cut_selection">
+      <div id="cut-selection-token-inputs"></div>
+    </form>
+  {% endif %}
+
+  {% if can_paste %}
+    <form method="post" id="paste-clipboard-form" class="d-none">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="paste_clipboard">
+    </form>
+  {% endif %}
+
+  {% if can_share %}
+    <form method="post" id="create-public-link-form" class="d-none">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="create_public_link">
+      <input type="hidden" name="path_token" id="create-public-link-path-token">
+    </form>
+
+    <div class="modal fade" id="share-item-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="post" id="share-item-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="share">
+            <input type="hidden" name="path_token" id="share-item-path-token">
+            <div class="modal-header">
+              <h5 class="modal-title">Share item</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="small text-body-secondary mb-3">Item: <span id="share-item-name" class="fw-semibold"></span></div>
+              <div class="mb-3">
+                <label for="share-item-target-user" class="form-label">User</label>
+                <select id="share-item-target-user" name="target_user" class="form-select">
+                  <option value="">Select user</option>
+                  {% for share_target in share_targets %}
+                    <option value="{{ share_target.id }}">{{ share_target.username }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label for="share-item-target-group" class="form-label">Group</label>
+                <select id="share-item-target-group" name="target_group" class="form-select">
+                  <option value="">Select group</option>
+                  {% for share_group in share_groups %}
+                    <option value="{{ share_group.id }}">{{ share_group.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Choose either a user or a group.</div>
+              </div>
+              <div>
+                <label for="share-item-permission" class="form-label">Permission</label>
+                <select id="share-item-permission" name="permission" class="form-select" required>
+                  {% for value, label in permission_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mt-3">
+                <label for="share-item-expiry-duration" class="form-label">Expiry duration</label>
+                <select id="share-item-expiry-duration" name="expires_in_hours" class="form-select">
+                  <option value="">No expiry</option>
+                  <option value="1">1 hour</option>
+                  <option value="24">24 hours</option>
+                  <option value="168">7 days</option>
+                  <option value="720">30 days</option>
+                </select>
+                <div class="form-text">Choose a quick duration or set an exact expiry time below.</div>
+              </div>
+              <div class="mt-3">
+                <label for="share-item-expires-at" class="form-label">Exact expiry time</label>
+                <input type="datetime-local" id="share-item-expires-at" name="expires_at" class="form-control">
+                <div class="form-text">Optional. Leave blank when using duration.</div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary" aria-label="Share" title="Share"><i class="bi bi-share"></i></button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if can_delete %}
+    <div class="modal fade" id="delete-item-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="post" id="delete-item-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="path_token" id="delete-item-path-token">
+            <div class="modal-header">
+              <h5 class="modal-title">Delete item</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-0">Delete <span id="delete-item-name" class="fw-semibold"></span>? This cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-danger">Delete</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="bulk-delete-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="post" id="bulk-delete-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_delete">
+            <div id="bulk-delete-token-inputs"></div>
+            <div class="modal-header">
+              <h5 class="modal-title">Delete selected items</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-0">Delete <span id="bulk-delete-count" class="fw-semibold">0</span> selected item(s)? This cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-danger">Delete selected</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if can_share %}
+    <div class="modal fade" id="bulk-share-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="post" id="bulk-share-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_share">
+            <div id="bulk-share-token-inputs"></div>
+            <div class="modal-header">
+              <h5 class="modal-title">Share selected items</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="small text-body-secondary mb-3"><span id="bulk-share-count" class="fw-semibold">0</span> item(s) selected</div>
+              <div class="mb-3">
+                <label for="bulk-share-target-user" class="form-label">User</label>
+                <select id="bulk-share-target-user" name="target_user" class="form-select">
+                  <option value="">Select user</option>
+                  {% for share_target in share_targets %}
+                    <option value="{{ share_target.id }}">{{ share_target.username }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label for="bulk-share-target-group" class="form-label">Group</label>
+                <select id="bulk-share-target-group" name="target_group" class="form-select">
+                  <option value="">Select group</option>
+                  {% for share_group in share_groups %}
+                    <option value="{{ share_group.id }}">{{ share_group.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">Choose either a user or a group.</div>
+              </div>
+              <div class="mb-3">
+                <label for="bulk-share-permission" class="form-label">Permission</label>
+                <select id="bulk-share-permission" name="permission" class="form-select" required>
+                  {% for value, label in permission_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label for="bulk-share-expiry-duration" class="form-label">Expiry duration</label>
+                <select id="bulk-share-expiry-duration" name="expires_in_hours" class="form-select">
+                  <option value="">No expiry</option>
+                  <option value="1">1 hour</option>
+                  <option value="24">24 hours</option>
+                  <option value="168">7 days</option>
+                  <option value="720">30 days</option>
+                </select>
+              </div>
+              <div>
+                <label for="bulk-share-expires-at" class="form-label">Exact expiry time</label>
+                <input type="datetime-local" id="bulk-share-expires-at" name="expires_at" class="form-control">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Share selected</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+  {{ block.super }}
+  {% if can_delete %}
+    <script>
+      (function () {
+        var deleteModalElement = document.getElementById('delete-item-modal');
+        var deleteItemName = document.getElementById('delete-item-name');
+        var deletePathTokenInput = document.getElementById('delete-item-path-token');
+        var deleteButtons = document.querySelectorAll('.delete-item-button');
+        var deleteModal = null;
+
+        if (!deleteModalElement || !window.bootstrap || !window.bootstrap.Modal || !deleteItemName || !deletePathTokenInput) {
+          return;
+        }
+
+        deleteModal = new window.bootstrap.Modal(deleteModalElement);
+
+        Array.prototype.forEach.call(deleteButtons, function (button) {
+          button.addEventListener('click', function () {
+            var itemName = button.getAttribute('data-item-name') || '';
+            var pathToken = button.getAttribute('data-path-token') || '';
+
+            deleteItemName.textContent = itemName;
+            deletePathTokenInput.value = pathToken;
+            deleteModal.show();
+          });
+        });
+      }());
+    </script>
+  {% endif %}
+  {% if can_share %}
+    <script>
+      (function () {
+        var shareModalElement = document.getElementById('share-item-modal');
+        var sharePathTokenInput = document.getElementById('share-item-path-token');
+        var createPublicLinkForm = document.getElementById('create-public-link-form');
+        var createPublicLinkPathInput = document.getElementById('create-public-link-path-token');
+        var createPublicLinkButtons = document.querySelectorAll('.create-public-link-button');
+        var shareItemName = document.getElementById('share-item-name');
+        var shareTargetUser = document.getElementById('share-item-target-user');
+        var shareTargetGroup = document.getElementById('share-item-target-group');
+        var shareExpiryDuration = document.getElementById('share-item-expiry-duration');
+        var shareExpiryAt = document.getElementById('share-item-expires-at');
+        var shareButtons = document.querySelectorAll('.share-item-button');
+        var shareModal = null;
+
+        if (!shareModalElement || !window.bootstrap || !window.bootstrap.Modal || !sharePathTokenInput || !shareItemName || !shareTargetUser || !shareTargetGroup || !shareExpiryDuration || !shareExpiryAt) {
+          return;
+        }
+
+        shareModal = new window.bootstrap.Modal(shareModalElement);
+
+        Array.prototype.forEach.call(shareButtons, function (button) {
+          button.addEventListener('click', function () {
+            var pathToken = button.getAttribute('data-path-token') || '';
+            var itemName = button.getAttribute('data-item-name') || '';
+
+            sharePathTokenInput.value = pathToken;
+            shareItemName.textContent = itemName;
+            shareTargetUser.value = '';
+            shareTargetGroup.value = '';
+            shareExpiryDuration.value = '';
+            shareExpiryAt.value = '';
+            shareModal.show();
+          });
+        });
+
+        shareTargetUser.addEventListener('change', function () {
+          if (shareTargetUser.value) {
+            shareTargetGroup.value = '';
+          }
+        });
+
+        shareTargetGroup.addEventListener('change', function () {
+          if (shareTargetGroup.value) {
+            shareTargetUser.value = '';
+          }
+        });
+
+        shareExpiryDuration.addEventListener('change', function () {
+          if (shareExpiryDuration.value) {
+            shareExpiryAt.value = '';
+          }
+        });
+
+        shareExpiryAt.addEventListener('change', function () {
+          if (shareExpiryAt.value) {
+            shareExpiryDuration.value = '';
+          }
+        });
+
+        Array.prototype.forEach.call(createPublicLinkButtons, function (button) {
+          if (!createPublicLinkForm || !createPublicLinkPathInput) {
+            return;
+          }
+          button.addEventListener('click', function () {
+            createPublicLinkPathInput.value = button.getAttribute('data-path-token') || '';
+            createPublicLinkForm.submit();
+          });
+        });
+      }());
+    </script>
+  {% endif %}
+  {% if can_create_folder %}
+    <script>
+      (function () {
+        var createFolderButton = document.getElementById('create-folder-button');
+        var createFolderForm = document.getElementById('create-folder-form');
+        var createFolderName = document.getElementById('create-folder-name');
+        var createFolderModalElement = document.getElementById('create-folder-modal');
+        var createFolderModalName = document.getElementById('create-folder-modal-name');
+        var createFolderConfirmButton = document.getElementById('create-folder-confirm');
+        var createFolderModal = null;
+        var createTextFileButton = document.getElementById('create-text-file-button');
+        var createTextFileForm = document.getElementById('create-text-file-form');
+        var createTextFileName = document.getElementById('create-text-file-name');
+        var createTextFileModalElement = document.getElementById('create-text-file-modal');
+        var createTextFileModalName = document.getElementById('create-text-file-modal-name');
+        var createTextFileConfirmButton = document.getElementById('create-text-file-confirm');
+        var createTextFileModal = null;
+
+        if (createFolderModalElement && window.bootstrap && window.bootstrap.Modal) {
+          createFolderModal = new window.bootstrap.Modal(createFolderModalElement);
+        }
+
+        if (createTextFileModalElement && window.bootstrap && window.bootstrap.Modal) {
+          createTextFileModal = new window.bootstrap.Modal(createTextFileModalElement);
+        }
+
+        if (createFolderButton && createFolderForm && createFolderName && createFolderModal && createFolderModalName && createFolderConfirmButton) {
+          createFolderButton.addEventListener('click', function () {
+            createFolderModalName.value = '';
+            createFolderModal.show();
+            window.setTimeout(function () {
+              createFolderModalName.focus();
+            }, 120);
+          });
+
+          createFolderConfirmButton.addEventListener('click', function () {
+            var folderName = createFolderModalName.value;
+            if (!folderName || !folderName.trim()) {
+              createFolderModalName.focus();
+              return;
+            }
+            createFolderName.value = folderName.trim();
+            createFolderForm.submit();
+          });
+
+          createFolderModalName.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              createFolderConfirmButton.click();
+            }
+          });
+        }
+
+        if (createTextFileButton && createTextFileForm && createTextFileName && createTextFileModal && createTextFileModalName && createTextFileConfirmButton) {
+          createTextFileButton.addEventListener('click', function () {
+            createTextFileModalName.value = '';
+            createTextFileModal.show();
+            window.setTimeout(function () {
+              createTextFileModalName.focus();
+            }, 120);
+          });
+
+          createTextFileConfirmButton.addEventListener('click', function () {
+            var fileName = createTextFileModalName.value;
+            if (!fileName || !fileName.trim()) {
+              createTextFileModalName.focus();
+              return;
+            }
+            createTextFileName.value = fileName.trim();
+            createTextFileForm.submit();
+          });
+
+          createTextFileModalName.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              createTextFileConfirmButton.click();
+            }
+          });
+        }
+      }());
+    </script>
+  {% endif %}
+  {% if can_upload %}
+    <script>
+      (function () {
+        var form = document.getElementById('upload-form');
+        var input = document.getElementById('upload-file-input');
+        var folderInput = document.getElementById('upload-folder-input');
+        var dropzone = document.getElementById('upload-dropzone');
+        var uploadPickerButton = document.getElementById('upload-picker-button');
+        var uploadModeModalElement = document.getElementById('upload-mode-modal');
+        var uploadModeFilesButton = document.getElementById('upload-mode-files');
+        var uploadModeFolderButton = document.getElementById('upload-mode-folder');
+        var progressWrap = document.getElementById('upload-progress-wrap');
+        var progressBar = document.getElementById('upload-progress-bar');
+        var progressValue = document.getElementById('upload-progress-value');
+        var progressLabel = document.getElementById('upload-progress-label');
+        var droppedUploads = [];
+        var uploadModeModal = null;
+
+        if (!form || !input || !folderInput || !dropzone || !progressWrap || !progressBar || !progressValue || !progressLabel) {
+          return;
+        }
+
+        if (uploadModeModalElement && window.bootstrap && window.bootstrap.Modal) {
+          uploadModeModal = new window.bootstrap.Modal(uploadModeModalElement);
+        }
+
+        if (uploadPickerButton && uploadModeModal && uploadModeFilesButton && uploadModeFolderButton) {
+          uploadPickerButton.addEventListener('click', function () {
+            uploadModeModal.show();
+          });
+
+          uploadModeFilesButton.addEventListener('click', function () {
+            uploadModeModal.hide();
+            input.click();
+          });
+
+          uploadModeFolderButton.addEventListener('click', function () {
+            uploadModeModal.hide();
+            folderInput.click();
+          });
+        }
+
+        function setUploading(isUploading) {
+          var submitButton = form.querySelector('button[type="submit"]');
+          if (submitButton) {
+            submitButton.disabled = isUploading;
+          }
+          input.disabled = isUploading;
+          folderInput.disabled = isUploading;
+          dropzone.classList.toggle('disabled', isUploading);
+        }
+
+        function updateProgress(percent) {
+          var safePercent = Math.max(0, Math.min(100, percent));
+          progressBar.style.width = safePercent + '%';
+          progressValue.textContent = safePercent + '%';
+        }
+
+        function getCookie(name) {
+          var cookieValue = null;
+          if (!document.cookie) {
+            return cookieValue;
+          }
+
+          var cookies = document.cookie.split(';');
+          for (var i = 0; i < cookies.length; i += 1) {
+            var cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === name + '=') {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+          return cookieValue;
+        }
+
+        function uploadWithProgress() {
+          var hasFiles = (input.files && input.files.length) || (folderInput.files && folderInput.files.length) || droppedUploads.length;
+          if (!hasFiles) {
+            return;
+          }
+
+          var csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+          if (!csrfInput) {
+            return;
+          }
+
+          var formData = new FormData();
+          var uploadCount = 0;
+
+          function appendUploads(fileList, useRelativePath) {
+            Array.prototype.forEach.call(fileList || [], function (file) {
+              var fieldName = 'file' + uploadCount;
+              var relativePath = useRelativePath && file.webkitRelativePath ? file.webkitRelativePath : file.name;
+              formData.append(fieldName, file, file.name);
+              formData.append('upload_path_' + fieldName, relativePath);
+              uploadCount += 1;
+            });
+          }
+
+          function appendDroppedUploads() {
+            droppedUploads.forEach(function (item) {
+              var fieldName = 'file' + uploadCount;
+              formData.append(fieldName, item.file, item.file.name);
+              formData.append('upload_path_' + fieldName, item.relativePath || item.file.name);
+              uploadCount += 1;
+            });
+          }
+
+          appendUploads(input.files, false);
+          appendUploads(folderInput.files, true);
+          appendDroppedUploads();
+
+          if (!uploadCount) {
+            return;
+          }
+
+          formData.append('csrfmiddlewaretoken', csrfInput.value);
+          formData.append('action', 'upload');
+          var xhr = new XMLHttpRequest();
+          var csrfToken = getCookie('csrftoken');
+
+          progressWrap.classList.remove('d-none');
+          progressLabel.textContent = 'Uploading...';
+          updateProgress(0);
+          setUploading(true);
+
+          xhr.open('POST', window.location.href, true);
+          if (csrfToken) {
+            xhr.setRequestHeader('X-CSRFToken', csrfToken);
+          }
+
+          xhr.upload.addEventListener('progress', function (event) {
+            if (!event.lengthComputable) {
+              return;
+            }
+            updateProgress(Math.round((event.loaded / event.total) * 100));
+          });
+
+          xhr.addEventListener('load', function () {
+            updateProgress(100);
+            progressLabel.textContent = 'Upload complete';
+            droppedUploads = [];
+            window.location.reload();
+          });
+
+          xhr.addEventListener('error', function () {
+            progressLabel.textContent = 'Upload failed';
+            setUploading(false);
+            droppedUploads = [];
+          });
+
+          xhr.send(formData);
+        }
+
+        function setFilesAndSubmit(files) {
+          if (!files || !files.length) {
+            return;
+          }
+
+          var dataTransfer = new DataTransfer();
+          Array.prototype.forEach.call(files, function (file) {
+            dataTransfer.items.add(file);
+          });
+          input.files = dataTransfer.files;
+          droppedUploads = [];
+          uploadWithProgress();
+        }
+
+        function flattenNestedArrays(items) {
+          return items.reduce(function (acc, item) {
+            if (Array.isArray(item)) {
+              return acc.concat(flattenNestedArrays(item));
+            }
+            acc.push(item);
+            return acc;
+          }, []);
+        }
+
+        function readAllDirectoryEntries(directoryReader) {
+          return new Promise(function (resolve) {
+            var entries = [];
+
+            function readBatch() {
+              directoryReader.readEntries(
+                function (results) {
+                  if (!results.length) {
+                    resolve(entries);
+                    return;
+                  }
+                  entries = entries.concat(Array.prototype.slice.call(results));
+                  readBatch();
+                },
+                function () {
+                  resolve(entries);
+                }
+              );
+            }
+
+            readBatch();
+          });
+        }
+
+        function collectFromEntry(entry, parentPath) {
+          return new Promise(function (resolve) {
+            if (!entry) {
+              resolve([]);
+              return;
+            }
+
+            if (entry.isFile) {
+              entry.file(
+                function (file) {
+                  var relativePath = parentPath ? parentPath + '/' + file.name : file.name;
+                  resolve([{ file: file, relativePath: relativePath }]);
+                },
+                function () {
+                  resolve([]);
+                }
+              );
+              return;
+            }
+
+            if (entry.isDirectory) {
+              var nextPath = parentPath ? parentPath + '/' + entry.name : entry.name;
+              readAllDirectoryEntries(entry.createReader()).then(function (children) {
+                Promise.all(
+                  children.map(function (child) {
+                    return collectFromEntry(child, nextPath);
+                  })
+                ).then(function (nestedResults) {
+                  resolve(flattenNestedArrays(nestedResults));
+                });
+              });
+              return;
+            }
+
+            resolve([]);
+          });
+        }
+
+        function collectFromHandle(handle, parentPath) {
+          if (!handle) {
+            return Promise.resolve([]);
+          }
+
+          if (handle.kind === 'file') {
+            return handle.getFile().then(function (file) {
+              var relativePath = parentPath ? parentPath + '/' + file.name : file.name;
+              return [{ file: file, relativePath: relativePath }];
+            }, function () {
+              return [];
+            });
+          }
+
+          if (handle.kind === 'directory') {
+            var nextPath = parentPath ? parentPath + '/' + handle.name : handle.name;
+            return (async function () {
+              var nested = [];
+              for await (var childHandle of handle.values()) {
+                var childItems = await collectFromHandle(childHandle, nextPath);
+                nested = nested.concat(childItems);
+              }
+              return nested;
+            })();
+          }
+
+          return Promise.resolve([]);
+        }
+
+        function collectDroppedUploads(dataTransfer) {
+          var items = dataTransfer && dataTransfer.items ? Array.prototype.slice.call(dataTransfer.items) : [];
+          var files = dataTransfer && dataTransfer.files ? Array.prototype.slice.call(dataTransfer.files) : [];
+
+          if (!items.length) {
+            return Promise.resolve(
+              files.map(function (file) {
+                return {
+                  file: file,
+                  relativePath: file.webkitRelativePath || file.name,
+                };
+              })
+            );
+          }
+
+          var handleItems = items.filter(function (item) {
+            return typeof item.getAsFileSystemHandle === 'function';
+          });
+
+          if (handleItems.length) {
+            return Promise.all(
+              handleItems.map(function (item) {
+                return item.getAsFileSystemHandle().then(function (handle) {
+                  return collectFromHandle(handle, '');
+                }, function () {
+                  return [];
+                });
+              })
+            ).then(function (results) {
+              return flattenNestedArrays(results);
+            });
+          }
+
+          var entries = items.map(function (item) {
+            return item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+          }).filter(function (entry) {
+            return !!entry;
+          });
+
+          if (!entries.length) {
+            return Promise.resolve(
+              files.map(function (file) {
+                return {
+                  file: file,
+                  relativePath: file.webkitRelativePath || file.name,
+                };
+              })
+            );
+          }
+
+          return Promise.all(
+            entries.map(function (entry) {
+              return collectFromEntry(entry, '');
+            })
+          ).then(function (results) {
+            return flattenNestedArrays(results);
+          });
+        }
+
+        dropzone.addEventListener('click', function () {
+          input.click();
+        });
+
+        dropzone.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            input.click();
+          }
+        });
+
+        ['dragenter', 'dragover'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.add('is-active');
+          });
+        });
+
+        ['dragleave', 'dragend', 'drop'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.remove('is-active');
+          });
+        });
+
+        dropzone.addEventListener('drop', function (event) {
+          input.value = '';
+          folderInput.value = '';
+          collectDroppedUploads(event.dataTransfer).then(function (items) {
+            if (items.length) {
+              droppedUploads = items;
+              uploadWithProgress();
+              return;
+            }
+            var files = event.dataTransfer && event.dataTransfer.files;
+            setFilesAndSubmit(files);
+          });
+        });
+
+        folderInput.addEventListener('change', function () {
+          if (!folderInput.files || !folderInput.files.length) {
+            return;
+          }
+          droppedUploads = [];
+          input.value = '';
+          uploadWithProgress();
+        });
+
+        input.addEventListener('change', function () {
+          if (!input.files || !input.files.length) {
+            return;
+          }
+          droppedUploads = [];
+          folderInput.value = '';
+          uploadWithProgress();
+        });
+
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          uploadWithProgress();
+        });
+      })();
+    </script>
+  {% endif %}
+
+  <script>
+    (function () {
+      var selectAllCheckbox = document.getElementById('select-all-entries');
+      var rowCheckboxes = document.querySelectorAll('.select-entry-checkbox');
+      var copySelectedButton = document.getElementById('bulk-copy-selected');
+      var cutSelectedButton = document.getElementById('bulk-cut-selected');
+      var pasteClipboardButton = document.getElementById('paste-clipboard');
+      var downloadSelectedButton = document.getElementById('bulk-download-selected');
+      var deleteSelectedButton = document.getElementById('bulk-delete-selected');
+      var shareSelectedButton = document.getElementById('bulk-share-selected');
+      var copySelectionForm = document.getElementById('copy-selection-form');
+      var copySelectionTokenInputs = document.getElementById('copy-selection-token-inputs');
+      var cutSelectionForm = document.getElementById('cut-selection-form');
+      var cutSelectionTokenInputs = document.getElementById('cut-selection-token-inputs');
+      var pasteClipboardForm = document.getElementById('paste-clipboard-form');
+      var copyItemButtons = document.querySelectorAll('.copy-item-button');
+      var cutItemButtons = document.querySelectorAll('.cut-item-button');
+
+      var bulkDeleteModalElement = document.getElementById('bulk-delete-modal');
+      var bulkDeleteCount = document.getElementById('bulk-delete-count');
+      var bulkDeleteTokenInputs = document.getElementById('bulk-delete-token-inputs');
+      var bulkDeleteModal = null;
+
+      var bulkShareModalElement = document.getElementById('bulk-share-modal');
+      var bulkShareCount = document.getElementById('bulk-share-count');
+      var bulkShareTokenInputs = document.getElementById('bulk-share-token-inputs');
+      var bulkShareTargetUser = document.getElementById('bulk-share-target-user');
+      var bulkShareTargetGroup = document.getElementById('bulk-share-target-group');
+      var bulkShareExpiryDuration = document.getElementById('bulk-share-expiry-duration');
+      var bulkShareExpiresAt = document.getElementById('bulk-share-expires-at');
+      var bulkShareModal = null;
+
+      if (window.bootstrap && window.bootstrap.Modal && bulkDeleteModalElement) {
+        bulkDeleteModal = new window.bootstrap.Modal(bulkDeleteModalElement);
+      }
+      if (window.bootstrap && window.bootstrap.Modal && bulkShareModalElement) {
+        bulkShareModal = new window.bootstrap.Modal(bulkShareModalElement);
+      }
+
+      function getSelectedRows() {
+        return Array.prototype.filter.call(rowCheckboxes, function (checkbox) {
+          return checkbox.checked;
+        });
+      }
+
+      function updateBulkActionState() {
+        var selectedCount = getSelectedRows().length;
+        if (copySelectedButton) {
+          copySelectedButton.disabled = selectedCount === 0;
+        }
+        if (cutSelectedButton) {
+          cutSelectedButton.disabled = selectedCount === 0;
+        }
+        if (downloadSelectedButton) {
+          downloadSelectedButton.disabled = selectedCount === 0;
+        }
+        if (deleteSelectedButton) {
+          deleteSelectedButton.disabled = selectedCount === 0;
+        }
+        if (shareSelectedButton) {
+          shareSelectedButton.disabled = selectedCount === 0;
+        }
+        if (selectAllCheckbox) {
+          if (!rowCheckboxes.length) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.disabled = true;
+            return;
+          }
+          selectAllCheckbox.disabled = false;
+          selectAllCheckbox.checked = selectedCount > 0 && selectedCount === rowCheckboxes.length;
+          selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < rowCheckboxes.length;
+        }
+      }
+
+      function setTokenInputs(container, tokens) {
+        if (!container) {
+          return;
+        }
+        container.innerHTML = '';
+        tokens.forEach(function (token) {
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = 'path_tokens';
+          input.value = token;
+          container.appendChild(input);
+        });
+      }
+
+      Array.prototype.forEach.call(rowCheckboxes, function (checkbox) {
+        checkbox.addEventListener('change', updateBulkActionState);
+      });
+
+      if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function () {
+          Array.prototype.forEach.call(rowCheckboxes, function (checkbox) {
+            checkbox.checked = selectAllCheckbox.checked;
+          });
+          updateBulkActionState();
+        });
+      }
+
+      if (downloadSelectedButton) {
+        downloadSelectedButton.addEventListener('click', function () {
+          var selectedRows = getSelectedRows();
+          selectedRows.forEach(function (row) {
+            var url = row.getAttribute('data-download-url');
+            if (!url) {
+              return;
+            }
+            var link = document.createElement('a');
+            link.href = url;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          });
+        });
+      }
+
+      if (copySelectedButton && copySelectionForm) {
+        copySelectedButton.addEventListener('click', function () {
+          var selectedRows = getSelectedRows();
+          var tokens = selectedRows.map(function (row) {
+            return row.getAttribute('data-scope-path-token');
+          }).filter(Boolean);
+
+          setTokenInputs(copySelectionTokenInputs, tokens);
+          copySelectionForm.submit();
+        });
+      }
+
+      if (cutSelectedButton && cutSelectionForm) {
+        cutSelectedButton.addEventListener('click', function () {
+          var selectedRows = getSelectedRows();
+          var tokens = selectedRows.map(function (row) {
+            return row.getAttribute('data-scope-path-token');
+          }).filter(Boolean);
+
+          setTokenInputs(cutSelectionTokenInputs, tokens);
+          cutSelectionForm.submit();
+        });
+      }
+
+      Array.prototype.forEach.call(copyItemButtons, function (button) {
+        if (!copySelectionForm) {
+          return;
+        }
+        button.addEventListener('click', function () {
+          var token = button.getAttribute('data-path-token');
+          setTokenInputs(copySelectionTokenInputs, token ? [token] : []);
+          copySelectionForm.submit();
+        });
+      });
+
+      Array.prototype.forEach.call(cutItemButtons, function (button) {
+        if (!cutSelectionForm) {
+          return;
+        }
+        button.addEventListener('click', function () {
+          var token = button.getAttribute('data-path-token');
+          setTokenInputs(cutSelectionTokenInputs, token ? [token] : []);
+          cutSelectionForm.submit();
+        });
+      });
+
+      if (pasteClipboardButton && pasteClipboardForm) {
+        pasteClipboardButton.addEventListener('click', function () {
+          pasteClipboardForm.submit();
+        });
+      }
+
+      if (deleteSelectedButton && bulkDeleteModal) {
+        deleteSelectedButton.addEventListener('click', function () {
+          var selectedRows = getSelectedRows();
+          var tokens = selectedRows.map(function (row) {
+            return row.getAttribute('data-scope-path-token');
+          }).filter(Boolean);
+
+          setTokenInputs(bulkDeleteTokenInputs, tokens);
+          if (bulkDeleteCount) {
+            bulkDeleteCount.textContent = String(tokens.length);
+          }
+          bulkDeleteModal.show();
+        });
+      }
+
+      if (shareSelectedButton && bulkShareModal) {
+        shareSelectedButton.addEventListener('click', function () {
+          var selectedRows = getSelectedRows();
+          var tokens = selectedRows.map(function (row) {
+            return row.getAttribute('data-owner-path-token');
+          }).filter(Boolean);
+
+          setTokenInputs(bulkShareTokenInputs, tokens);
+          if (bulkShareCount) {
+            bulkShareCount.textContent = String(tokens.length);
+          }
+          if (bulkShareTargetUser) {
+            bulkShareTargetUser.value = '';
+          }
+          if (bulkShareTargetGroup) {
+            bulkShareTargetGroup.value = '';
+          }
+          if (bulkShareExpiryDuration) {
+            bulkShareExpiryDuration.value = '';
+          }
+          if (bulkShareExpiresAt) {
+            bulkShareExpiresAt.value = '';
+          }
+          bulkShareModal.show();
+        });
+      }
+
+      if (bulkShareExpiryDuration && bulkShareExpiresAt) {
+        bulkShareExpiryDuration.addEventListener('change', function () {
+          if (bulkShareExpiryDuration.value) {
+            bulkShareExpiresAt.value = '';
+          }
+        });
+
+        bulkShareExpiresAt.addEventListener('change', function () {
+          if (bulkShareExpiresAt.value) {
+            bulkShareExpiryDuration.value = '';
+          }
+        });
+      }
+
+      if (bulkShareTargetUser && bulkShareTargetGroup) {
+        bulkShareTargetUser.addEventListener('change', function () {
+          if (bulkShareTargetUser.value) {
+            bulkShareTargetGroup.value = '';
+          }
+        });
+
+        bulkShareTargetGroup.addEventListener('change', function () {
+          if (bulkShareTargetGroup.value) {
+            bulkShareTargetUser.value = '';
+          }
+        });
+      }
+
+      updateBulkActionState();
+    }());
+  </script>
+{% endblock %}

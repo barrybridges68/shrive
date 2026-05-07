@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+db.sqlite3
+logs/
+staticfiles/
+upload_tmp/
+storage/
+staticfiles/
+docker-compose.override.yml
