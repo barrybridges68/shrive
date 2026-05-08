@@ -7,8 +7,7 @@ from decimal import Decimal
 from datetime import timedelta
 from urllib.parse import urlparse
 
-from .models import SharedPath
-from .models import AdminTodoItem
+from .models import AdminTodoItem, SharedPath
 from .storage import normalise_relative_path
 
 

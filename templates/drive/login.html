@@ -1,7 +1,9 @@
 {% extends 'drive/base.html' %}
 {% load static %}
 
-{% block title %}Sign in | FileShare{% endblock %}
+{% block title %}Sign in | Shrive{% endblock %}
+
+{% block header %}{% endblock %}
 
 {% block auth_content %}
   <div class="auth-wrapper">
@@ -9,7 +11,7 @@
       {% csrf_token %}
       <div class="auth-box shadow-lg">
         <a href="{% url 'drive:login' %}" class="auth-logo mb-4">
-          <!-- <img src="{% static 'assets/images/logo-dark.svg' %}" alt="FileShare"> -->
+          <!-- <img src="{% static 'assets/images/logo-dark.svg' %}" alt="Shrive"> -->
         </a>
         <h4 class="mb-3">Sign in</h4>
         <!-- <p class="text-body-secondary mb-4">Access your files, shared folders, and read only libraries.</p> -->

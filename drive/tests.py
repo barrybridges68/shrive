@@ -12,7 +12,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from .models import AdminTodoItem, GroupSharedPath, SharedPath, SystemShareSettings, UserReadonlyShare, UserStorageProfile, UserTransferStats
+from .models import AdminTodoItem, GroupSharedPath, SharedPath, SystemShareSettings, UploadShareLink, UserReadonlyShare, UserStorageProfile, UserTransferStats
 from .storage import get_readonly_roots, get_user_root, iter_directory
 
 
@@ -290,6 +290,153 @@ class FileShareTests(TestCase):
         response = self.client.get(f'/shared/{share.id}/')
 
         self.assertEqual(response.status_code, 404)
+
+    def test_create_upload_only_link_requires_email_and_recipient(self):
+        User.objects.create_superuser(username='admin', email='admin@example.com', password='StrongPass123!')
+        owner = User.objects.create_user(username='owner-upload-link', password='StrongPass123!')
+        folder = get_user_root(owner) / 'dropbox'
+        folder.mkdir(parents=True, exist_ok=True)
+
+        self.client.force_login(owner)
+        response = self.client.get('/space/?path=dropbox')
+        self.assertEqual(response.status_code, 200)
+
+        page_content = response.content.decode()
+        token_match = re.search(r'id="create-upload-link-path-token"\s+value="([^"]+)"', page_content)
+        self.assertIsNotNone(token_match)
+
+        post_response = self.client.post(
+            '/space/',
+            {
+                'action': 'create_upload_link',
+                'path_token': token_match.group(1),
+                'uploader_email': '',
+            },
+            follow=True,
+        )
+
+        self.assertContains(post_response, 'Uploader email is required.')
+        self.assertEqual(UploadShareLink.objects.count(), 0)
+
+    def test_upload_only_link_hides_metadata_and_accepts_upload(self):
+        User.objects.create_superuser(username='admin', email='admin@example.com', password='StrongPass123!')
+        owner = User.objects.create_user(username='owner-upload-link-2', password='StrongPass123!')
+        folder = get_user_root(owner) / 'incoming'
+        folder.mkdir(parents=True, exist_ok=True)
+
+        self.client.force_login(owner)
+        response = self.client.get('/space/?path=incoming')
+        self.assertEqual(response.status_code, 200)
+
+        page_content = response.content.decode()
+        token_match = re.search(r'id="create-upload-link-path-token"\s+value="([^"]+)"', page_content)
+        self.assertIsNotNone(token_match)
+
+        uploader_email = 'uploader@example.com'
+        recipient_label = 'Finance Team'
+        create_response = self.client.post(
+            '/space/',
+            {
+                'action': 'create_upload_link',
+                'path_token': token_match.group(1),
+                'uploader_email': uploader_email,
+            },
+            follow=True,
+        )
+
+        self.assertContains(create_response, 'Upload-only link:')
+        upload_link = UploadShareLink.objects.get(owner=owner, relative_path='incoming')
+        upload_url = f'/upload/{upload_link.token}/'
+
+        self.assertNotIn(uploader_email, upload_url)
+        self.assertNotIn('Finance', upload_url)
+
+        public_page = self.client.get(upload_url)
+        self.assertEqual(public_page.status_code, 200)
+        self.assertNotContains(public_page, uploader_email)
+        self.assertNotContains(public_page, recipient_label)
+
+        upload_response = self.client.post(
+            upload_url,
+            {
+                'action': 'upload',
+                'file': SimpleUploadedFile('invoice.txt', b'new invoice'),
+            },
+            follow=True,
+        )
+
+        self.assertContains(upload_response, 'File uploaded.')
+        self.assertTrue((folder / 'invoice.txt').exists())
+        upload_link.refresh_from_db()
+        self.assertEqual(upload_link.uploaded_files_count, 1)
+        self.assertIsNotNone(upload_link.last_uploaded_at)
+
+    def test_upload_only_link_invalid_token_shows_error_page(self):
+        response = self.client.get('/upload/not-a-valid-token/')
+
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, 'Upload Link Unavailable', status_code=404)
+        self.assertContains(response, 'cannot be verified', status_code=404)
+
+    def test_create_upload_only_link_accepts_expiry_duration(self):
+        User.objects.create_superuser(username='admin-expiry', email='admin-expiry@example.com', password='StrongPass123!')
+        owner = User.objects.create_user(username='owner-upload-expiry', password='StrongPass123!')
+        folder = get_user_root(owner) / 'dropbox'
+        folder.mkdir(parents=True, exist_ok=True)
+
+        self.client.force_login(owner)
+        response = self.client.get('/space/?path=dropbox')
+        self.assertEqual(response.status_code, 200)
+
+        page_content = response.content.decode()
+        token_match = re.search(r'id="create-upload-link-path-token"\s+value="([^"]+)"', page_content)
+        self.assertIsNotNone(token_match)
+
+        self.client.post(
+            '/space/',
+            {
+                'action': 'create_upload_link',
+                'path_token': token_match.group(1),
+                'uploader_email': 'uploader-expiry@example.com',
+                'expires_in_hours': '1',
+            },
+            follow=True,
+        )
+
+        upload_link = UploadShareLink.objects.get(owner=owner, relative_path='dropbox')
+        self.assertIsNotNone(upload_link.expires_at)
+        self.assertGreater(upload_link.expires_at, timezone.now() + timedelta(minutes=55))
+
+    def test_upload_only_link_expires_30_minutes_after_use(self):
+        User.objects.create_superuser(username='admin-upload-auto-expire', email='admin-upload-auto-expire@example.com', password='StrongPass123!')
+        owner = User.objects.create_user(username='owner-upload-auto-expire', password='StrongPass123!')
+        folder = get_user_root(owner) / 'incoming'
+        folder.mkdir(parents=True, exist_ok=True)
+
+        upload_link = UploadShareLink.objects.create(
+            owner=owner,
+            relative_path='incoming',
+            token='tokenuploadexpires123',
+            uploader_email='uploader@example.com',
+            recipient_label=owner.username,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+
+        upload_response = self.client.post(
+            f'/upload/{upload_link.token}/',
+            {
+                'action': 'upload',
+                'file': SimpleUploadedFile('invoice.txt', b'new invoice'),
+            },
+            follow=True,
+        )
+
+        self.assertContains(upload_response, 'File uploaded.')
+
+        upload_link.refresh_from_db()
+        self.assertIsNotNone(upload_link.expires_at)
+        expected_expiry = timezone.now() + timedelta(minutes=30)
+        self.assertLess(abs((upload_link.expires_at - expected_expiry).total_seconds()), 120)
 
     def test_quota_blocks_large_upload(self):
         User.objects.create_superuser(username='admin', email='admin@example.com', password='StrongPass123!')

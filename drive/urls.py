@@ -38,6 +38,7 @@ urlpatterns = [
     path("readonly/<slug:root_slug>/open/", views.readonly_open, name="readonly-open"),
     path("readonly/<slug:root_slug>/thumb/", views.readonly_thumb, name="readonly-thumb"),
     path("public/<str:token>/", views.public_browse, name="public-browse"),
+    path("upload/<str:token>/", views.public_upload, name="public-upload"),
     path("public/<str:token>/download/", views.public_download, name="public-download"),
     path("public/<str:token>/open/", views.public_open, name="public-open"),
     path("public/<str:token>/thumb/", views.public_thumb, name="public-thumb"),

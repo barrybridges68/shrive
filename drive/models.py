@@ -148,6 +148,25 @@ class PublicShareLink(models.Model):
         return f"{self.owner.username} public: {self.relative_path}"
 
 
+class UploadShareLink(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='upload_links_created')
+    relative_path = models.CharField(max_length=500)
+    token = models.CharField(max_length=64, unique=True)
+    uploader_email = models.EmailField(max_length=320)
+    recipient_label = models.CharField(max_length=255)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    uploaded_files_count = models.PositiveIntegerField(default=0)
+    last_uploaded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['owner__username', 'relative_path', 'uploader_email']
+
+    def __str__(self):
+        return f"{self.owner.username} upload: {self.relative_path}"
+
+
 class SystemShareSettings(models.Model):
     user_storage_root = models.CharField(max_length=1024, blank=True)
     readonly_storage_root = models.TextField(blank=True)

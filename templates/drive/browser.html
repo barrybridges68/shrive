@@ -1,6 +1,6 @@
 {% extends 'drive/base.html' %}
 
-{% block title %}{{ page_title }} | FileShare{% endblock %}
+{% block title %}{{ page_title }} | Shrive{% endblock %}
 
 {% block extra_css %}
   <style>
@@ -68,6 +68,12 @@
 
     .click-only-actions.dropdown > .dropdown-menu.show {
       display: block !important;
+    }
+
+    .files-table-wrap {
+      overflow-x: auto;
+      overflow-y: visible;
+      padding-bottom: 3.5rem;
     }
   </style>
 {% endblock %}
@@ -235,11 +241,14 @@
           <button type="button" class="btn btn-primary btn-sm" id="bulk-share-selected" disabled>
             <i class="bi bi-share me-1"></i>Share selected
           </button>
+          <button type="button" class="btn btn-outline-success btn-sm" id="create-upload-link-current">
+            <i class="bi bi-cloud-arrow-up me-1"></i>Create upload link
+          </button>
         {% endif %}
       </div>
     </div>
     <div class="card-body p-0">
-      <div class="table-responsive">
+      <div class="table-responsive files-table-wrap">
         <table class="table table-hover align-middle mb-0 files-table">
           <thead>
             <tr>
@@ -480,6 +489,52 @@
       <input type="hidden" name="path_token" id="create-public-link-path-token">
     </form>
 
+    <div class="modal fade" id="create-upload-link-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="post" id="create-upload-link-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_upload_link">
+            <input type="hidden" name="path_token" id="create-upload-link-path-token" value="{{ current_folder_path_token }}">
+            <div class="modal-header">
+              <h5 class="modal-title">Create upload-only link</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="small text-body-secondary mb-3">Folder: <span class="fw-semibold">{{ current_folder_display|default:'/' }}</span></div>
+              <div class="small text-body-secondary mb-3">Recipient: <span class="fw-semibold">{{ request.user.username }}</span></div>
+              <div class="mb-3">
+                <label for="create-upload-link-email" class="form-label">Uploader email</label>
+                <input type="email" class="form-control" id="create-upload-link-email" name="uploader_email" required>
+                <div class="form-text">Used to identify who this secure upload link is for.</div>
+              </div>
+              <div class="mb-3">
+                <label for="create-upload-link-expiry-duration" class="form-label">Expiry duration</label>
+                <select id="create-upload-link-expiry-duration" name="expires_in_hours" class="form-select">
+                  <option value="">Use default</option>
+                  <option value="0.5">30 minutes</option>
+                  <option value="1">1 hour</option>
+                  <option value="24">24 hours</option>
+                  <option value="168">7 days</option>
+                  <option value="720">30 days</option>
+                </select>
+                <div class="form-text">Choose a quick duration or set an exact expiry time below.</div>
+              </div>
+              <div>
+                <label for="create-upload-link-expires-at" class="form-label">Exact expiry time</label>
+                <input type="datetime-local" id="create-upload-link-expires-at" name="expires_at" class="form-control">
+                <div class="form-text">Optional. Leave blank when using duration.</div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Create upload link</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <div class="modal fade" id="share-item-modal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -700,6 +755,12 @@
         var createPublicLinkForm = document.getElementById('create-public-link-form');
         var createPublicLinkPathInput = document.getElementById('create-public-link-path-token');
         var createPublicLinkButtons = document.querySelectorAll('.create-public-link-button');
+        var createUploadLinkCurrentButton = document.getElementById('create-upload-link-current');
+        var createUploadLinkModalElement = document.getElementById('create-upload-link-modal');
+        var createUploadLinkForm = document.getElementById('create-upload-link-form');
+        var createUploadLinkEmail = document.getElementById('create-upload-link-email');
+        var createUploadLinkExpiryDuration = document.getElementById('create-upload-link-expiry-duration');
+        var createUploadLinkExpiresAt = document.getElementById('create-upload-link-expires-at');
         var shareItemName = document.getElementById('share-item-name');
         var shareTargetUser = document.getElementById('share-item-target-user');
         var shareTargetGroup = document.getElementById('share-item-target-group');
@@ -707,12 +768,16 @@
         var shareExpiryAt = document.getElementById('share-item-expires-at');
         var shareButtons = document.querySelectorAll('.share-item-button');
         var shareModal = null;
+        var createUploadLinkModal = null;
 
         if (!shareModalElement || !window.bootstrap || !window.bootstrap.Modal || !sharePathTokenInput || !shareItemName || !shareTargetUser || !shareTargetGroup || !shareExpiryDuration || !shareExpiryAt) {
           return;
         }
 
         shareModal = new window.bootstrap.Modal(shareModalElement);
+        if (createUploadLinkModalElement) {
+          createUploadLinkModal = new window.bootstrap.Modal(createUploadLinkModalElement);
+        }
 
         Array.prototype.forEach.call(shareButtons, function (button) {
           button.addEventListener('click', function () {
@@ -762,6 +827,30 @@
             createPublicLinkForm.submit();
           });
         });
+
+        if (createUploadLinkCurrentButton && createUploadLinkModal && createUploadLinkForm && createUploadLinkEmail) {
+          createUploadLinkCurrentButton.addEventListener('click', function () {
+            createUploadLinkForm.reset();
+            createUploadLinkModal.show();
+            window.setTimeout(function () {
+              createUploadLinkEmail.focus();
+            }, 120);
+          });
+        }
+
+        if (createUploadLinkExpiryDuration && createUploadLinkExpiresAt) {
+          createUploadLinkExpiryDuration.addEventListener('change', function () {
+            if (createUploadLinkExpiryDuration.value) {
+              createUploadLinkExpiresAt.value = '';
+            }
+          });
+
+          createUploadLinkExpiresAt.addEventListener('change', function () {
+            if (createUploadLinkExpiresAt.value) {
+              createUploadLinkExpiryDuration.value = '';
+            }
+          });
+        }
       }());
     </script>
   {% endif %}

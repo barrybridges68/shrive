@@ -16,11 +16,13 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.models import Group, User
 from django.core import signing
 from django.core.mail import send_mail
-from django.core.exceptions import SuspiciousFileOperation
-from django.db.models import Q
+from django.core.exceptions import SuspiciousFileOperation, ValidationError
+from django.core.validators import validate_email
+from django.db.models import Count, Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone as dj_timezone
 from django.utils.crypto import get_random_string
 
 try:
@@ -46,7 +48,7 @@ from .forms import (
     allowed_share_targets_queryset,
 )
 from .audit import audit_event
-from .models import AdminTodoItem, GroupSharedPath, PublicShareLink, SharedPath, SystemShareSettings, UserReadonlyShare, UserStorageProfile, UserTransferStats
+from .models import AdminTodoItem, GroupSharedPath, PublicShareLink, SharedPath, SystemShareSettings, UploadShareLink, UserReadonlyShare, UserStorageProfile, UserTransferStats
 from .storage import (
     build_url,
     compute_size,
@@ -120,6 +122,11 @@ def active_public_shares_queryset():
     return PublicShareLink.objects.filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
 
 
+def active_upload_links_queryset():
+    now = datetime.now(timezone.utc)
+    return UploadShareLink.objects.filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+
+
 def resolve_public_share_expires_at(lifetime: str):
     value = (lifetime or 'never').strip().lower()
     now = datetime.now(timezone.utc)
@@ -130,6 +137,38 @@ def resolve_public_share_expires_at(lifetime: str):
     if value == 'month':
         return now + timedelta(days=30)
     return None
+
+
+def resolve_upload_link_expires_at(request):
+    expires_in_hours = (request.POST.get('expires_in_hours') or '').strip()
+    expires_at_value = (request.POST.get('expires_at') or '').strip()
+
+    if expires_in_hours and expires_at_value:
+        raise ValidationError('Choose either an expiry duration or an exact expiry time, not both.')
+
+    resolved_expires_at = None
+    if expires_in_hours:
+        try:
+            duration_hours = float(expires_in_hours)
+        except ValueError as exc:
+            raise ValidationError('Select a valid expiry duration.') from exc
+
+        if duration_hours <= 0:
+            raise ValidationError('Expiry duration must be greater than zero.')
+
+        resolved_expires_at = datetime.now(timezone.utc) + timedelta(hours=duration_hours)
+    elif expires_at_value:
+        try:
+            parsed_expires_at = datetime.strptime(expires_at_value, '%Y-%m-%dT%H:%M')
+        except ValueError as exc:
+            raise ValidationError('Enter a valid expiry time.') from exc
+
+        resolved_expires_at = dj_timezone.make_aware(parsed_expires_at, dj_timezone.get_current_timezone())
+
+    if resolved_expires_at and resolved_expires_at <= dj_timezone.now():
+        raise ValidationError('Expiry must be in the future.')
+
+    return resolved_expires_at
 
 
 def make_path_token(relative_path: str, scope_key: str) -> str:
@@ -997,6 +1036,65 @@ def handle_write_actions(request, *, acting_user, storage_owner, scope_root, cur
         )
         return True
 
+    if action == 'create_upload_link' and acting_user == storage_owner:
+        try:
+            relative_path = resolve_path_token(request.POST.get('path_token'), scope_key)
+            target = resolve_within(scope_root, relative_path)
+        except (SuspiciousFileOperation, Http404):
+            messages.error(request, 'That request could not be validated.')
+            return True
+
+        if target == scope_root or not target.exists() or not target.is_dir():
+            messages.error(request, 'Upload-only links can be created only for existing folders.')
+            return True
+
+        uploader_email = (request.POST.get('uploader_email') or '').strip().lower()
+        recipient_label = acting_user.username
+
+        if not uploader_email:
+            messages.error(request, 'Uploader email is required.')
+            return True
+
+        try:
+            validate_email(uploader_email)
+        except ValidationError:
+            messages.error(request, 'Enter a valid uploader email address.')
+            return True
+
+        configured_share_settings = SystemShareSettings.get_solo()
+        try:
+            resolved_expires_at = resolve_upload_link_expires_at(request)
+        except ValidationError as exc:
+            messages.error(request, exc.message)
+            return True
+
+        if resolved_expires_at is None:
+            resolved_expires_at = resolve_public_share_expires_at(configured_share_settings.public_share_link_lifetime)
+
+        upload_link = UploadShareLink.objects.create(
+            owner=acting_user,
+            relative_path=relative_path,
+            token=get_random_string(40),
+            uploader_email=uploader_email,
+            recipient_label=recipient_label,
+            expires_at=resolved_expires_at,
+        )
+
+        configured_public_base_url = (configured_share_settings.public_share_base_url or '').strip().rstrip('/')
+        upload_path = reverse('drive:public-upload', args=[upload_link.token])
+        upload_url = f'{configured_public_base_url}{upload_path}' if configured_public_base_url else request.build_absolute_uri(upload_path)
+        messages.success(request, f'Upload-only link: {upload_url}')
+        audit_event(
+            'sharing.upload_link_created',
+            request=request,
+            user=acting_user,
+            relative_path=relative_path,
+            token=upload_link.token,
+            uploader_email=uploader_email,
+            recipient=recipient_label,
+        )
+        return True
+
     if action == 'bulk_share' and acting_user == storage_owner:
         raw_tokens = request.POST.getlist('path_tokens')
         if not raw_tokens:
@@ -1409,10 +1507,10 @@ def admin_users(request):
                         )
                     if new_user.email:
                         sent_count = send_mail(
-                            subject='Your FileShare account details',
+                            subject='Your Shrive account details',
                             message=(
                                 f'Hello {new_user.username},\n\n'
-                                'An account has been created for you on FileShare.\n\n'
+                                'An account has been created for you on Shrive.\n\n'
                                 f'Username: {new_user.username}\n'
                                 f'Temporary password: {random_password}\n\n'
                                 'Please sign in and change your password as soon as possible.'
@@ -1936,6 +2034,11 @@ def _handle_remove_share(request, subject_user):
         audit_event('share.public_link_removed', request=request, user=request.user, path=link.relative_path)
         link.delete()
         messages.success(request, f'Public link removed for {link.relative_path}.')
+    elif action == 'remove_upload_link':
+        link = get_object_or_404(UploadShareLink, pk=request.POST.get('share_id'), owner=subject_user)
+        audit_event('share.upload_link_removed', request=request, user=request.user, path=link.relative_path)
+        link.delete()
+        messages.success(request, f'Upload-only link removed for {link.relative_path}.')
 
 
 def _build_shares_context(subject_user, viewer_user, configured_settings):
@@ -1957,6 +2060,10 @@ def _build_shares_context(subject_user, viewer_user, configured_settings):
     public_links = (
         PublicShareLink.objects.filter(owner=subject_user)
         .order_by('relative_path')
+    )
+    upload_links = (
+        UploadShareLink.objects.filter(owner=subject_user)
+        .order_by('relative_path', 'created_at')
     )
 
     def share_status(expires_at):
@@ -2010,13 +2117,173 @@ def _build_shares_context(subject_user, viewer_user, configured_settings):
             'created_at': p.created_at,
         })
 
+    upload_link_rows = []
+    for u in upload_links:
+        status, exp = share_status(u.expires_at)
+        token_url = ''
+        if base_url:
+            token_url = f'{base_url}/upload/{u.token}/'
+        else:
+            token_url = reverse('drive:public-upload', args=[u.token])
+        upload_link_rows.append({
+            'id': u.pk,
+            'path': u.relative_path,
+            'token': u.token,
+            'url': token_url,
+            'status': status,
+            'expires_at': exp,
+            'created_at': u.created_at,
+            'uploader_email': u.uploader_email,
+            'recipient_label': u.recipient_label,
+            'uploaded_files_count': u.uploaded_files_count,
+            'last_uploaded_at': u.last_uploaded_at,
+        })
+
     return {
         'subject_user': subject_user,
         'is_own': subject_user == viewer_user,
         'user_share_rows': user_share_rows,
         'group_share_rows': group_share_rows,
         'public_link_rows': public_link_rows,
+        'upload_link_rows': upload_link_rows,
     }
+
+
+def public_upload(request, token):
+    now = datetime.now(timezone.utc)
+    upload_link = UploadShareLink.objects.select_related('owner').filter(token=token).first()
+    if not upload_link:
+        return render(
+            request,
+            'drive/public_upload_invalid.html',
+            {
+                'page_title': 'Upload Link Unavailable',
+                'page_description': 'This upload link cannot be verified or is no longer available.',
+            },
+            status=404,
+        )
+
+    if upload_link.expires_at and upload_link.expires_at <= now:
+        return render(
+            request,
+            'drive/public_upload_invalid.html',
+            {
+                'page_title': 'Upload Link Expired',
+                'page_description': 'This upload link has expired and can no longer be used.',
+            },
+            status=410,
+        )
+
+    upload_root = resolve_user_path(upload_link.owner, upload_link.relative_path)
+    if not upload_root.exists() or not upload_root.is_dir():
+        return render(
+            request,
+            'drive/public_upload_invalid.html',
+            {
+                'page_title': 'Upload Link Unavailable',
+                'page_description': 'This upload link cannot be verified or is no longer available.',
+            },
+            status=404,
+        )
+
+    if request.method == 'POST':
+        uploaded_files = []
+        for key in request.FILES.keys():
+            if key == 'file' or key == 'folder' or key.startswith('file') or key.startswith('folder'):
+                files_for_key = request.FILES.getlist(key)
+                hinted_paths = request.POST.getlist(f'upload_path_{key}')
+                for index, uploaded_file in enumerate(files_for_key):
+                    path_hint = hinted_paths[index] if index < len(hinted_paths) else None
+                    uploaded_files.append((uploaded_file, path_hint))
+
+        if not uploaded_files:
+            messages.error(request, 'Select at least one file to upload.')
+            return redirect('drive:public-upload', token=upload_link.token)
+
+        uploaded_count = 0
+        uploaded_bytes = 0
+        is_single_upload = len(uploaded_files) == 1
+
+        for uploaded_file, path_hint in uploaded_files:
+            try:
+                upload_relative_path = safe_upload_relative_path(path_hint or uploaded_file.name)
+            except SuspiciousFileOperation:
+                if is_single_upload:
+                    messages.error(request, 'Invalid file name.')
+                else:
+                    messages.error(request, f'Skipped invalid file name: {uploaded_file.name}')
+                continue
+
+            destination = resolve_within(upload_root, upload_relative_path)
+            if destination.exists():
+                if is_single_upload:
+                    messages.error(request, 'A file with that name already exists.')
+                else:
+                    messages.error(request, f'{upload_relative_path}: a file with that name already exists.')
+                continue
+
+            if destination.parent.exists() and not destination.parent.is_dir():
+                if is_single_upload:
+                    messages.error(request, 'Parent path is not a folder.')
+                else:
+                    messages.error(request, f'{upload_relative_path}: parent path is not a folder.')
+                continue
+
+            if not has_available_space(upload_link.owner, uploaded_file.size):
+                if is_single_upload:
+                    messages.error(request, 'Upload would exceed the quota assigned to this storage space.')
+                else:
+                    messages.error(request, f'{upload_relative_path}: upload would exceed the quota assigned to this storage space.')
+                continue
+
+            try:
+                save_uploaded_file(uploaded_file, destination)
+            except OSError:
+                if is_single_upload:
+                    messages.error(request, 'Upload failed due to an invalid destination path.')
+                else:
+                    messages.error(request, f'{upload_relative_path}: upload failed due to an invalid destination path.')
+                continue
+
+            uploaded_count += 1
+            uploaded_bytes += int(uploaded_file.size or 0)
+            if is_single_upload:
+                messages.success(request, 'File uploaded.')
+            else:
+                messages.success(request, f'{upload_relative_path}: uploaded.')
+
+        if uploaded_count:
+            used_at = datetime.now(timezone.utc)
+            auto_expires_at = used_at + timedelta(minutes=30)
+            expires_at = upload_link.expires_at
+            if expires_at is None or expires_at > auto_expires_at:
+                expires_at = auto_expires_at
+
+            upload_link.uploaded_files_count += uploaded_count
+            upload_link.last_uploaded_at = used_at
+            upload_link.expires_at = expires_at
+            upload_link.save(update_fields=['uploaded_files_count', 'last_uploaded_at', 'expires_at', 'updated_at'])
+            audit_event(
+                'sharing.upload_link_used',
+                request=request,
+                owner=upload_link.owner.username,
+                token=upload_link.token,
+                uploader_email=upload_link.uploader_email,
+                recipient=upload_link.recipient_label,
+                uploaded_count=uploaded_count,
+                uploaded_bytes=uploaded_bytes,
+            )
+
+        return redirect('drive:public-upload', token=upload_link.token)
+
+    return render(
+        request,
+        'drive/public_upload.html',
+        {
+            'page_title': 'Shrive Secure Upload',
+            'page_description': 'Drop files into the box or use the upload button.',
+        },
+    )
 
 
 @login_required
@@ -2117,6 +2384,8 @@ def own_space(request):
             'share_targets': allowed_share_targets_queryset(request.user),
             'share_groups': Group.objects.order_by('name') if request.user.is_superuser else request.user.groups.order_by('name'),
             'permission_choices': SharedPath.Permission.choices,
+            'current_folder_path_token': make_path_token(current_path, f'scope:{request.user.pk}'),
+            'current_folder_display': current_path or '/',
         },
     )
 

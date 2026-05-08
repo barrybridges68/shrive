@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}FileShare{% endblock %}</title>
+    <title>{% block title %}Shrive{% endblock %}</title>
     <link rel="shortcut icon" href="{% static 'assets/images/floppy.svg' %}">
     <link rel="stylesheet" href="{% static 'assets/fonts/bootstrap/bootstrap-icons.css' %}">
     <link rel="stylesheet" href="{% static 'assets/css/animate.css' %}">
@@ -13,13 +13,13 @@
     {% block extra_css %}{% endblock %}
   </head>
   <body class="fileshare-body">
-    <header class="app-header d-flex align-items-center justify-content-between px-3 py-2">
+    {% block header %}<header class="app-header d-flex align-items-center justify-content-between px-3 py-2">
       <div class="d-flex align-items-center gap-3">
         <a href="{% url 'drive:home' %}" class="d-flex align-items-center gap-2 text-decoration-none text-reset">
-          <!-- <img src="{% static 'assets/images/logo.svg' %}" class="logo" alt="FileShare"> -->
+          <!-- <img src="{% static 'assets/images/logo.svg' %}" class="logo" alt="Shrive"> -->
           <div>
-            <div class="fw-semibold">Home Drive</div>
-            <div class="small text-body-secondary">Drive-style workspace</div>
+            <div class="fw-semibold">Shrive</div>
+            <div class="small text-body-secondary">Self hosted drive</div>
           </div>
         </a>
       </div>
@@ -47,7 +47,7 @@
           </form>
         </div>
       {% endif %}
-    </header>
+    </header>{% endblock %}
 
     <div class="container-fluid py-4">
       {% if user.is_authenticated %}
@@ -171,6 +171,7 @@
           showFolderDownloadNotice(link.getAttribute('data-folder-name') || 'Folder');
         });
       })();
+
     </script>
     {% block extra_js %}{% endblock %}
   </body>

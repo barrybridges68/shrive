@@ -1,5 +1,5 @@
 """
-Django settings for the FileShare project.
+Django settings for the Shrive project.
 """
 
 import os
@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-@5vqsamx&1#)ug@67(&c134t=z^pp*9@-qtin(tg=oh9*n5cej')
 DEBUG = os.getenv('DJANGO_DEBUG', '1').strip().lower() in {'1', 'true', 'yes', 'on'}
 
-default_allowed_hosts = ["127.0.0.1", "localhost", "0.0.0.0", "::1", "testserver"]
+default_allowed_hosts = ["127.0.0.1", "localhost"]
 configured_allowed_hosts = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if host.strip()]
 ALLOWED_HOSTS = configured_allowed_hosts or default_allowed_hosts
 if DEBUG and not configured_allowed_hosts:
@@ -87,7 +87,7 @@ STORAGES = {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
     },
     'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
     },
 }
 
@@ -108,12 +108,12 @@ LOGS_DIR = APP_DATA_ROOT / 'logs'
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Configure extra read-only directories as dictionaries with name/path pairs.
-FILESHARE_READONLY_ROOTS = [
-    {'name': 'Server', 'path': '/'},
-]
+# FILESHARE_READONLY_ROOTS = [
+#     {'name': 'Server', 'path': '/'},
+# ]
 
 FILESHARE_DEFAULT_QUOTA_BYTES = 10 * 1024 * 1024 * 1024
-FILESHARE_ENABLE_ADMIN_TODO = True
+FILESHARE_ENABLE_ADMIN_TODO = os.getenv('FILESHARE_ENABLE_ADMIN_TODO', '1').strip().lower() in {'1', 'true', 'yes', 'on'}
 FILESHARE_ENABLE_EXPIRED_LINK_CLEANUP = True
 FILESHARE_EXPIRED_LINK_CLEANUP_INTERVAL_SECONDS = 60
 
@@ -123,7 +123,7 @@ FILESHARE_TEXT_EDITOR_EXTENSIONS = [
     '.rb', '.sh', '.yml', '.yaml', '.xml', '.ini', '.cfg', '.conf', '.toml', '.sql', '.md', '.py',
 ]
 
-DEFAULT_FROM_EMAIL = 'noreply@fileshare.local'
+DEFAULT_FROM_EMAIL = 'noreply@shrive.local'
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 LOGGING = {

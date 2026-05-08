@@ -1,6 +1,6 @@
 # Shrive (Self Hosted Drive)
 
-A simple self hosted Django based file-sharing project or home use. It is not intended to be a replacement for services like Google Drive or Drop Box, but it has it's uses at home. Was orginally intended for sharing media, photos etc around the family without big tech getting involved.
+A simple self hosted Django-based drive app for home use. It is not intended to replace services like Google Drive or Dropbox, but it has practical uses at home. It was originally intended for sharing media and photos around the family without big tech getting involved.
 
 ## What it supports
 
@@ -35,7 +35,7 @@ FILESHARE_DEFAULT_QUOTA_BYTES = 10 * 1024 * 1024 * 1024
 ## Run it
 
 ```bash
-cd /home/barry/Documents/Projects/FileShare
+cd /home/barry/Documents/Projects/Shrive
 source .venv/bin/activate
 python manage.py runserver
 ```

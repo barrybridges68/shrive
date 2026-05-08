@@ -1,16 +1,15 @@
 {% extends 'drive/base.html' %}
 {% load static %}
 
-{% block title %}Initial setup | FileShare{% endblock %}
+{% block title %}Initial setup | Shrive{% endblock %}
+
+{% block header %}{% endblock %}
 
 {% block auth_content %}
   <div class="auth-wrapper">
     <form method="post" class="auth-form-card">
       {% csrf_token %}
       <div class="auth-box shadow-lg">
-        <a href="{% url 'drive:setup' %}" class="auth-logo mb-4">
-          <img src="{% static 'assets/images/logo-dark.svg' %}" alt="FileShare">
-        </a>
         <h4 class="mb-3">Initial admin setup</h4>
         <p class="text-body-secondary mb-4">The first successful setup creates the system administrator account that manages quotas and users.</p>
         {{ form.non_field_errors }}
