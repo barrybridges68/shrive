@@ -31,6 +31,10 @@ Note: This is not currently a very mobile friendly application. It's works, but 
 - Audit log to see what's blown-up!
 - WebDAV access for each user's own storage space.
 
+# Known Issues
+- Large file uploads fail. Usually file over 1Gb
+
+
 ## Install
 
 1. Clone the repo from with `git clone https://github.com/barrybridges68/shrive.git`
