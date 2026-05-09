@@ -80,6 +80,8 @@ Finally, set the time zone for the Admin. This ensures your files have the right
 ## Uploading Files
 There are two ways to upload files. Firstly for PC and tablet users you can just drag and drop files or folders into the upload area. Please be aware that when uploading folders it will recursivly upload all files and folders under the select folder. Secondly, clicking (or tapping) on the upload area gives you the options to upload.
 
+Note: There is a max time limit on uploads of 900s so if you are on a very slow connection break large files up if possible.
+
 ## The File Browser
 
 # My Shares
