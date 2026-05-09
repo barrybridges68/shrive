@@ -1,11 +1,14 @@
 from pathlib import Path
+import base64
 import io
 import re
 from datetime import timedelta
 from tempfile import TemporaryDirectory
+import xml.etree.ElementTree as ET
 import zipfile
 
 from django.contrib.auth.models import Group, User
+from django.contrib.auth.hashers import make_password
 from django.core import signing
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -1209,6 +1212,33 @@ class FileShareTests(TestCase):
         self.assertIsNotNone(match)
         self.assertTrue(target_user.check_password(match.group(1)))
 
+    def test_admin_settings_can_generate_and_revoke_webdav_api_key(self):
+        admin_user = User.objects.create_superuser(username='admin-webdav-key', email='admin-webdav@example.com', password='StrongPass123!')
+        self.client.force_login(admin_user)
+
+        generate_response = self.client.post(
+            '/users/settings/',
+            {'action': 'regenerate_webdav_api_key'},
+            follow=True,
+        )
+
+        self.assertContains(generate_response, 'A new WebDAV API key was generated.')
+        self.assertContains(generate_response, 'Copy this API key now.')
+        profile = UserStorageProfile.objects.get(user=admin_user)
+        self.assertTrue(profile.webdav_api_key_hash)
+        self.assertIsNotNone(profile.webdav_api_key_created_at)
+
+        revoke_response = self.client.post(
+            '/users/settings/',
+            {'action': 'revoke_webdav_api_key'},
+            follow=True,
+        )
+
+        self.assertContains(revoke_response, 'WebDAV API key revoked.')
+        profile.refresh_from_db()
+        self.assertEqual(profile.webdav_api_key_hash, '')
+        self.assertIsNone(profile.webdav_api_key_created_at)
+
     def test_user_specific_readonly_roots_are_not_visible_to_other_users(self):
         owner = User.objects.create_user(username='owner-user', password='StrongPass123!')
         other = User.objects.create_user(username='other-user', password='StrongPass123!')
@@ -1327,4 +1357,116 @@ class FileShareTests(TestCase):
         user.delete()
 
         self.assertFalse(user_root.exists())
+
+    def test_webdav_requires_authentication(self):
+        response = self.client.generic('PROPFIND', '/dav/', HTTP_DEPTH='0')
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('Basic', response.headers.get('WWW-Authenticate', ''))
+
+    def test_webdav_supports_basic_auth(self):
+        user = User.objects.create_user(username='dav-basic-user', password='StrongPass123!')
+        profile = UserStorageProfile.objects.get(user=user)
+        api_key = f'shrivedav.{user.id}.test-secret-value'
+        profile.webdav_api_key_hash = make_password(api_key)
+        profile.save(update_fields=['webdav_api_key_hash'])
+        credentials = base64.b64encode(f'dav-basic-user:{api_key}'.encode('utf-8')).decode('ascii')
+
+        response = self.client.generic('PROPFIND', '/dav/', HTTP_AUTHORIZATION=f'Basic {credentials}', HTTP_DEPTH='0')
+
+        self.assertEqual(response.status_code, 207)
+        self.assertIn('application/xml', response.headers.get('Content-Type', ''))
+
+    def test_webdav_rejects_account_password_when_api_key_is_not_used(self):
+        user = User.objects.create_user(username='dav-password-user', password='StrongPass123!')
+        credentials = base64.b64encode(b'dav-password-user:StrongPass123!').decode('ascii')
+
+        response = self.client.generic('PROPFIND', '/dav/', HTTP_AUTHORIZATION=f'Basic {credentials}', HTTP_DEPTH='0')
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_webdav_options_announces_capabilities(self):
+        user = User.objects.create_user(username='dav-options-user', password='StrongPass123!')
+        self.client.force_login(user)
+
+        response = self.client.options('/dav/')
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.headers.get('DAV'), '1')
+        self.assertIn('PROPFIND', response.headers.get('Allow', ''))
+        self.assertIn('MOVE', response.headers.get('Allow', ''))
+
+    def test_webdav_propfind_lists_root_children(self):
+        user = User.objects.create_user(username='dav-propfind-user', password='StrongPass123!')
+        user_root = get_user_root(user)
+        (user_root / 'hello.txt').write_text('hello', encoding='utf-8')
+        self.client.force_login(user)
+
+        response = self.client.generic('PROPFIND', '/dav/', HTTP_DEPTH='1')
+
+        self.assertEqual(response.status_code, 207)
+        tree = ET.fromstring(response.content)
+        href_nodes = tree.findall('.//{DAV:}href')
+        hrefs = {node.text for node in href_nodes}
+        self.assertIn('/dav/', hrefs)
+        self.assertIn('/dav/hello.txt', hrefs)
+
+    def test_webdav_mkcol_put_move_copy_and_delete(self):
+        user = User.objects.create_user(username='dav-write-user', password='StrongPass123!')
+        self.client.force_login(user)
+
+        mkcol_response = self.client.generic('MKCOL', '/dav/docs')
+        self.assertEqual(mkcol_response.status_code, 201)
+
+        put_response = self.client.put('/dav/docs/note.txt', data=b'hello webdav', content_type='text/plain')
+        self.assertEqual(put_response.status_code, 201)
+
+        copy_response = self.client.generic('COPY', '/dav/docs/note.txt', HTTP_DESTINATION='/dav/docs/note-copy.txt')
+        self.assertEqual(copy_response.status_code, 201)
+
+        move_response = self.client.generic('MOVE', '/dav/docs/note.txt', HTTP_DESTINATION='/dav/docs/note-renamed.txt')
+        self.assertEqual(move_response.status_code, 201)
+
+        overwrite_blocked = self.client.generic(
+            'COPY',
+            '/dav/docs/note-renamed.txt',
+            HTTP_DESTINATION='/dav/docs/note-copy.txt',
+            HTTP_OVERWRITE='F',
+        )
+        self.assertEqual(overwrite_blocked.status_code, 412)
+
+        get_response = self.client.get('/dav/docs/note-renamed.txt')
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(b''.join(get_response.streaming_content), b'hello webdav')
+
+        delete_response = self.client.generic('DELETE', '/dav/docs/note-renamed.txt')
+        self.assertEqual(delete_response.status_code, 204)
+
+    def test_account_can_generate_and_revoke_webdav_api_key(self):
+        User.objects.create_superuser(username='admin', email='admin@example.com', password='StrongPass123!')
+        user = User.objects.create_user(username='dav-account-user', password='StrongPass123!')
+        self.client.force_login(user)
+
+        generate_response = self.client.post(
+            '/account/',
+            {'action': 'regenerate_webdav_api_key'},
+            follow=True,
+        )
+
+        self.assertContains(generate_response, 'A new WebDAV API key was generated.')
+        self.assertContains(generate_response, 'Copy this API key now.')
+        profile = UserStorageProfile.objects.get(user=user)
+        self.assertTrue(profile.webdav_api_key_hash)
+        self.assertIsNotNone(profile.webdav_api_key_created_at)
+
+        revoke_response = self.client.post(
+            '/account/',
+            {'action': 'revoke_webdav_api_key'},
+            follow=True,
+        )
+
+        self.assertContains(revoke_response, 'WebDAV API key revoked.')
+        profile.refresh_from_db()
+        self.assertEqual(profile.webdav_api_key_hash, '')
+        self.assertIsNone(profile.webdav_api_key_created_at)
 

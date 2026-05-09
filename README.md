@@ -13,6 +13,28 @@ A simple self hosted Django-based drive app for home use. It is not intended to 
 - Configurable root storage folder inside the project settings.
 - No application-level upload size cap in Django.
 - Basic file editing of text based files
+- WebDAV access for each user's own storage space
+
+## WebDAV API
+
+Shrive now exposes a WebDAV endpoint at `/dav/`.
+
+- Scope: each authenticated user accesses only their own drive root.
+- Auth: WebDAV API key (generated in account settings), via HTTP Basic or Bearer auth.
+- Methods: `OPTIONS`, `PROPFIND`, `GET`, `HEAD`, `PUT`, `DELETE`, `MKCOL`, `COPY`, `MOVE`.
+
+Examples:
+
+```bash
+# List root metadata
+curl -u anyname:YOUR_API_KEY -X PROPFIND -H "Depth: 1" http://127.0.0.1:8000/dav/
+
+# Upload/replace a file
+curl -u anyname:YOUR_API_KEY -T ./notes.txt http://127.0.0.1:8000/dav/notes.txt
+
+# Create a folder
+curl -u anyname:YOUR_API_KEY -X MKCOL http://127.0.0.1:8000/dav/projects
+```
 
 ## Key settings
 

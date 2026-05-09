@@ -1,10 +1,15 @@
 from collections import deque
+import base64
+import binascii
 from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from io import BytesIO
 import mimetypes
 from pathlib import Path, PurePosixPath
 import shutil
 from tempfile import SpooledTemporaryFile
+from urllib.parse import quote, unquote, urlparse
+import xml.etree.ElementTree as ET
 import zipfile
 
 from django.conf import settings
@@ -13,6 +18,7 @@ from django.contrib.auth import login
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
+from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import Group, User
 from django.core import signing
 from django.core.mail import send_mail
@@ -24,6 +30,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone as dj_timezone
 from django.utils.crypto import get_random_string
+from django.views.decorators.csrf import csrf_exempt
 
 try:
     from PIL import Image, UnidentifiedImageError
@@ -1327,6 +1334,325 @@ def serve_thumbnail(path: Path, size: int = 88):
     return HttpResponse(buffer.getvalue(), content_type='image/png')
 
 
+WEBDAV_ALLOWED_METHODS = ['OPTIONS', 'PROPFIND', 'GET', 'HEAD', 'PUT', 'DELETE', 'MKCOL', 'COPY', 'MOVE']
+WEBDAV_API_KEY_PREFIX = 'shrivedav'
+
+
+def _webdav_method_not_allowed():
+    response = HttpResponse(status=405)
+    response['Allow'] = ', '.join(WEBDAV_ALLOWED_METHODS)
+    return response
+
+
+def _webdav_unauthorized_response() -> HttpResponse:
+    response = HttpResponse(status=401)
+    response['WWW-Authenticate'] = 'Basic realm="Shrive WebDAV"'
+    return response
+
+
+def _webdav_get_authenticated_user(request):
+    if request.user.is_authenticated:
+        return request.user
+
+    auth_header = (request.META.get('HTTP_AUTHORIZATION') or '').strip()
+    if not auth_header:
+        return None
+
+    api_key = None
+    if auth_header.lower().startswith('bearer '):
+        api_key = auth_header[7:].strip()
+    elif auth_header.lower().startswith('basic '):
+        encoded_credentials = auth_header[6:].strip()
+        try:
+            decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
+        except (binascii.Error, UnicodeDecodeError):
+            return None
+
+        _, separator, password = decoded_credentials.partition(':')
+        api_key = (password if separator else decoded_credentials).strip()
+
+    if not api_key:
+        return None
+
+    return _webdav_user_from_api_key(api_key)
+
+
+def _make_webdav_api_key_for_user(user: User) -> str:
+    token = get_random_string(48)
+    return f'{WEBDAV_API_KEY_PREFIX}.{user.pk}.{token}'
+
+
+def _webdav_user_from_api_key(api_key: str):
+    if not api_key:
+        return None
+
+    parts = api_key.split('.', 2)
+    if len(parts) != 3:
+        return None
+    if parts[0] != WEBDAV_API_KEY_PREFIX:
+        return None
+
+    try:
+        user_id = int(parts[1])
+    except ValueError:
+        return None
+
+    profile = (
+        UserStorageProfile.objects.select_related('user')
+        .filter(user_id=user_id, user__is_active=True)
+        .first()
+    )
+    if not profile or not profile.webdav_api_key_hash:
+        return None
+
+    if not check_password(api_key, profile.webdav_api_key_hash):
+        return None
+    return profile.user
+
+
+def _webdav_relative_path(resource_path: str | None) -> str:
+    raw = (resource_path or '').strip('/')
+    return normalise_relative_path(raw)
+
+
+def _webdav_href(relative_path: str, is_dir: bool) -> str:
+    if not relative_path:
+        return '/dav/'
+
+    encoded_parts = [quote(part, safe='') for part in relative_path.split('/')]
+    href = '/dav/' + '/'.join(encoded_parts)
+    if is_dir and not href.endswith('/'):
+        href += '/'
+    return href
+
+
+def _webdav_status_line(status_code: int) -> str:
+    phrases = {
+        200: 'OK',
+        201: 'Created',
+        204: 'No Content',
+        404: 'Not Found',
+    }
+    return f'HTTP/1.1 {status_code} {phrases.get(status_code, "")}'.strip()
+
+
+def _webdav_propstat(parent: ET.Element, status_code: int, *, resource: Path):
+    propstat = ET.SubElement(parent, '{DAV:}propstat')
+    prop = ET.SubElement(propstat, '{DAV:}prop')
+
+    ET.SubElement(prop, '{DAV:}displayname').text = resource.name or '/'
+
+    resource_type = ET.SubElement(prop, '{DAV:}resourcetype')
+    if resource.is_dir():
+        ET.SubElement(resource_type, '{DAV:}collection')
+
+    stat_result = resource.stat()
+    modified_at = datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc)
+    created_at = datetime.fromtimestamp(stat_result.st_ctime, tz=timezone.utc)
+    ET.SubElement(prop, '{DAV:}getlastmodified').text = format_datetime(modified_at, usegmt=True)
+    ET.SubElement(prop, '{DAV:}creationdate').text = created_at.isoformat()
+
+    if resource.is_file():
+        ET.SubElement(prop, '{DAV:}getcontentlength').text = str(stat_result.st_size)
+        content_type = get_inline_content_type(resource) or 'application/octet-stream'
+        ET.SubElement(prop, '{DAV:}getcontenttype').text = content_type
+
+    ET.SubElement(propstat, '{DAV:}status').text = _webdav_status_line(status_code)
+
+
+def _webdav_propfind_response(root: Path, relative_path: str, depth: str) -> HttpResponse:
+    target = resolve_within(root, relative_path)
+    if not target.exists():
+        raise Http404('File not found.')
+
+    ET.register_namespace('', 'DAV:')
+    multistatus = ET.Element('{DAV:}multistatus')
+
+    resources = [target]
+    include_children = depth.strip().lower() != '0'
+    if include_children and target.is_dir():
+        resources.extend(sorted(target.iterdir(), key=lambda child: (not child.is_dir(), child.name.lower())))
+
+    for resource in resources:
+        resource_relative = resource.relative_to(root).as_posix() if resource != root else ''
+        response_node = ET.SubElement(multistatus, '{DAV:}response')
+        ET.SubElement(response_node, '{DAV:}href').text = _webdav_href(resource_relative, resource.is_dir())
+        _webdav_propstat(response_node, 200, resource=resource)
+
+    xml_payload = ET.tostring(multistatus, encoding='utf-8', xml_declaration=True)
+    return HttpResponse(xml_payload, status=207, content_type='application/xml; charset=utf-8')
+
+
+def _webdav_destination_relative_path(request) -> str:
+    destination = (request.META.get('HTTP_DESTINATION') or '').strip()
+    if not destination:
+        raise SuspiciousFileOperation('Missing destination header.')
+
+    parsed = urlparse(destination)
+    destination_path = unquote(parsed.path or destination)
+    base_path = '/dav/'
+    if destination_path == '/dav':
+        destination_path = base_path
+
+    if not destination_path.startswith(base_path):
+        raise SuspiciousFileOperation('Destination must stay under /dav/.')
+
+    return _webdav_relative_path(destination_path[len(base_path):])
+
+
+def _webdav_has_quota_capacity(user, extra_size: int) -> bool:
+    profile, _ = UserStorageProfile.objects.get_or_create(
+        user=user,
+        defaults={'quota_bytes': settings.FILESHARE_DEFAULT_QUOTA_BYTES},
+    )
+    if profile.quota_bytes <= 0:
+        return False
+    return get_user_usage(user) + max(extra_size, 0) <= profile.quota_bytes
+
+
+@csrf_exempt
+def webdav_endpoint(request, resource_path: str = ''):
+    if request.method not in WEBDAV_ALLOWED_METHODS:
+        return _webdav_method_not_allowed()
+
+    acting_user = _webdav_get_authenticated_user(request)
+    if not acting_user:
+        return _webdav_unauthorized_response()
+
+    root = get_user_root(acting_user)
+    try:
+        relative_path = _webdav_relative_path(resource_path)
+        target = resolve_within(root, relative_path)
+    except SuspiciousFileOperation:
+        return HttpResponse(status=400)
+
+    if request.method == 'OPTIONS':
+        response = HttpResponse(status=204)
+        response['Allow'] = ', '.join(WEBDAV_ALLOWED_METHODS)
+        response['DAV'] = '1'
+        response['MS-Author-Via'] = 'DAV'
+        return response
+
+    if request.method == 'PROPFIND':
+        depth = request.META.get('HTTP_DEPTH', '1')
+        try:
+            return _webdav_propfind_response(root, relative_path, depth)
+        except (SuspiciousFileOperation, Http404):
+            return HttpResponse(status=404)
+
+    if request.method in {'GET', 'HEAD'}:
+        if not target.exists() or not target.is_file():
+            return HttpResponse(status=404)
+
+        response = FileResponse(
+            target.open('rb'),
+            as_attachment=False,
+            filename=target.name,
+            content_type=get_inline_content_type(target),
+        )
+        return response
+
+    if request.method == 'PUT':
+        if not relative_path:
+            return HttpResponse(status=405)
+        if target.exists() and target.is_dir():
+            return HttpResponse(status=409)
+
+        if not target.parent.exists() or not target.parent.is_dir():
+            return HttpResponse(status=409)
+
+        content = request.body
+        incoming_size = len(content)
+        existing_size = target.stat().st_size if target.exists() and target.is_file() else 0
+        extra_size = incoming_size - existing_size
+        if extra_size > 0 and not _webdav_has_quota_capacity(acting_user, extra_size):
+            return HttpResponse(status=507)
+
+        created = not target.exists()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        audit_event('storage.webdav_put', request=request, user=acting_user, path=str(target), bytes=incoming_size)
+        return HttpResponse(status=201 if created else 204)
+
+    if request.method == 'MKCOL':
+        if not relative_path:
+            return HttpResponse(status=405)
+        if request.body:
+            return HttpResponse(status=415)
+        if target.exists():
+            return HttpResponse(status=405)
+        if not target.parent.exists() or not target.parent.is_dir():
+            return HttpResponse(status=409)
+
+        target.mkdir(parents=False, exist_ok=False)
+        audit_event('storage.webdav_mkcol', request=request, user=acting_user, path=str(target))
+        return HttpResponse(status=201)
+
+    if request.method == 'DELETE':
+        if not relative_path:
+            return HttpResponse(status=403)
+        if not target.exists():
+            return HttpResponse(status=404)
+
+        delete_entry(target)
+        audit_event('storage.webdav_delete', request=request, user=acting_user, path=str(target))
+        return HttpResponse(status=204)
+
+    if request.method in {'COPY', 'MOVE'}:
+        if not relative_path:
+            return HttpResponse(status=403)
+        if not target.exists():
+            return HttpResponse(status=404)
+
+        try:
+            destination_relative = _webdav_destination_relative_path(request)
+        except SuspiciousFileOperation:
+            return HttpResponse(status=400)
+
+        if not destination_relative:
+            return HttpResponse(status=403)
+
+        destination = resolve_within(root, destination_relative)
+        overwrite = (request.META.get('HTTP_OVERWRITE', 'T').strip().upper() != 'F')
+        destination_exists = destination.exists()
+
+        if destination == target:
+            if request.method == 'MOVE':
+                return HttpResponse(status=204)
+            return HttpResponse(status=403)
+
+        if target.is_dir() and (destination == target or destination.is_relative_to(target)):
+            return HttpResponse(status=403)
+        if destination.parent.exists() and not destination.parent.is_dir():
+            return HttpResponse(status=409)
+        if not destination.parent.exists():
+            return HttpResponse(status=409)
+        if destination_exists and not overwrite:
+            return HttpResponse(status=412)
+
+        if request.method == 'COPY':
+            source_size = compute_size(target)
+            destination_size = compute_size(destination) if destination_exists else 0
+            extra_size = source_size - destination_size
+            if extra_size > 0 and not _webdav_has_quota_capacity(acting_user, extra_size):
+                return HttpResponse(status=507)
+
+        if destination_exists:
+            delete_entry(destination)
+
+        if request.method == 'COPY':
+            copy_entry(target, destination)
+            audit_event('storage.webdav_copy', request=request, user=acting_user, source=str(target), destination=str(destination))
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(target), str(destination))
+            audit_event('storage.webdav_move', request=request, user=acting_user, source=str(target), destination=str(destination))
+
+        return HttpResponse(status=204 if destination_exists else 201)
+
+    return _webdav_method_not_allowed()
+
+
 def home(request):
     if not initial_setup_complete():
         return redirect('drive:setup')
@@ -1412,15 +1738,35 @@ def account_view(request):
     form = PasswordChangeForm(user=request.user)
     apply_form_styles(form)
     if request.method == 'POST':
-        form = PasswordChangeForm(user=request.user, data=request.POST)
-        apply_form_styles(form)
-        if form.is_valid():
-            updated_user = form.save()
-            update_session_auth_hash(request, updated_user)
-            audit_event('account.password_changed', request=request, user=updated_user)
-            messages.success(request, 'Your password has been updated.')
-            return redirect('drive:account')
-        append_form_errors(request, form)
+        action = (request.POST.get('action') or 'change_password').strip()
+
+        if action == 'regenerate_webdav_api_key':
+            generated_webdav_api_key = _make_webdav_api_key_for_user(request.user)
+            profile.webdav_api_key_hash = make_password(generated_webdav_api_key)
+            profile.webdav_api_key_value = generated_webdav_api_key
+            profile.webdav_api_key_created_at = dj_timezone.now()
+            profile.save(update_fields=['webdav_api_key_hash', 'webdav_api_key_value', 'webdav_api_key_created_at', 'updated_at'])
+            audit_event('account.webdav_api_key_regenerated', request=request, user=request.user)
+            messages.success(request, 'A new WebDAV API key was generated.')
+
+        elif action == 'revoke_webdav_api_key':
+            profile.webdav_api_key_hash = ''
+            profile.webdav_api_key_value = ''
+            profile.webdav_api_key_created_at = None
+            profile.save(update_fields=['webdav_api_key_hash', 'webdav_api_key_value', 'webdav_api_key_created_at', 'updated_at'])
+            audit_event('account.webdav_api_key_revoked', request=request, user=request.user)
+            messages.success(request, 'WebDAV API key revoked.')
+
+        else:
+            form = PasswordChangeForm(user=request.user, data=request.POST)
+            apply_form_styles(form)
+            if form.is_valid():
+                updated_user = form.save()
+                update_session_auth_hash(request, updated_user)
+                audit_event('account.password_changed', request=request, user=updated_user)
+                messages.success(request, 'Your password has been updated.')
+                return redirect('drive:account')
+            append_form_errors(request, form)
 
     return render_shell(
         request,
@@ -1428,6 +1774,9 @@ def account_view(request):
         {
             'active_nav': 'account',
             'form': form,
+            'webdav_api_key_created_at': profile.webdav_api_key_created_at,
+            'has_webdav_api_key': bool(profile.webdav_api_key_hash),
+            'webdav_api_key_value': profile.webdav_api_key_value,
             'stats': {
                 'used_bytes': used_bytes,
                 'quota_bytes': quota_bytes,
@@ -1753,6 +2102,10 @@ def admin_settings(request):
         raise Http404('Page not found.')
 
     configured_settings = SystemShareSettings.get_solo()
+    profile, _ = UserStorageProfile.objects.get_or_create(
+        user=request.user,
+        defaults={'quota_bytes': settings.FILESHARE_DEFAULT_QUOTA_BYTES},
+    )
     password_form = PasswordChangeForm(user=request.user)
     apply_form_styles(password_form)
     settings_form = AdminShareRootSettingsForm(
@@ -1821,6 +2174,23 @@ def admin_settings(request):
                 return redirect('drive:admin-settings')
             append_form_errors(request, password_form)
 
+        elif action == 'regenerate_webdav_api_key':
+            generated_webdav_api_key = _make_webdav_api_key_for_user(request.user)
+            profile.webdav_api_key_hash = make_password(generated_webdav_api_key)
+            profile.webdav_api_key_value = generated_webdav_api_key
+            profile.webdav_api_key_created_at = dj_timezone.now()
+            profile.save(update_fields=['webdav_api_key_hash', 'webdav_api_key_value', 'webdav_api_key_created_at', 'updated_at'])
+            audit_event('admin.webdav_api_key_regenerated', request=request, user=request.user)
+            messages.success(request, 'A new WebDAV API key was generated.')
+
+        elif action == 'revoke_webdav_api_key':
+            profile.webdav_api_key_hash = ''
+            profile.webdav_api_key_value = ''
+            profile.webdav_api_key_created_at = None
+            profile.save(update_fields=['webdav_api_key_hash', 'webdav_api_key_value', 'webdav_api_key_created_at', 'updated_at'])
+            audit_event('admin.webdav_api_key_revoked', request=request, user=request.user)
+            messages.success(request, 'WebDAV API key revoked.')
+
     return render_shell(
         request,
         'drive/admin_settings.html',
@@ -1828,6 +2198,9 @@ def admin_settings(request):
             'active_nav': 'admin-settings',
             'password_form': password_form,
             'settings_form': settings_form,
+            'webdav_api_key_created_at': profile.webdav_api_key_created_at,
+            'has_webdav_api_key': bool(profile.webdav_api_key_hash),
+            'webdav_api_key_value': profile.webdav_api_key_value,
         },
     )
 

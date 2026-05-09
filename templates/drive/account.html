@@ -56,9 +56,64 @@
 
   <section class="card border-0 shadow-sm mb-4">
     <div class="card-body">
+      <h5 class="mb-3">WebDAV API key</h5>
+      <p class="text-body-secondary mb-3">Use this key to mount WebDAV instead of your account password.</p>
+
+      {% if webdav_api_key_value %}
+        <div class="alert alert-warning" role="alert">
+          <div class="fw-semibold mb-1">Your WebDav API key</div>
+          <div class="input-group input-group-sm">
+            <input
+              type="password"
+              class="form-control font-monospace"
+              value="{{ webdav_api_key_value }}"
+              readonly
+              autocomplete="off"
+              data-api-key-input
+              aria-label="Generated WebDAV API key"
+            >
+            <button type="button" class="btn btn-outline-secondary" data-api-key-toggle>Show</button>
+            <button type="button" class="btn btn-outline-secondary" data-api-key-copy>Copy</button>
+          </div>
+          <div class="small mt-2" data-api-key-feedback aria-live="polite"></div>
+        </div>
+      {% elif has_webdav_api_key %}
+        <div class="alert alert-info" role="alert">
+          This API key was created before persistent display was enabled. Generate a new key once to make it permanently visible here.
+        </div>
+      {% endif %}
+
+      <div class="small text-body-secondary mb-3">
+        {% if has_webdav_api_key %}
+          Active key created: {% if webdav_api_key_created_at %}{{ webdav_api_key_created_at|date:'Y-m-d H:i' }}{% else %}Unknown{% endif %}
+        {% else %}
+          No active WebDAV API key.
+        {% endif %}
+      </div>
+
+      <div class="d-flex flex-wrap gap-2">
+        <form method="post" class="m-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="regenerate_webdav_api_key">
+          <button type="submit" class="btn btn-outline-primary">Generate new API key</button>
+        </form>
+        {% if has_webdav_api_key %}
+          <form method="post" class="m-0">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="revoke_webdav_api_key">
+            <button type="submit" class="btn btn-outline-danger">Revoke API key</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
       <h5 class="mb-3">My password</h5>
       <form method="post" class="row g-3">
         {% csrf_token %}
+        <input type="hidden" name="action" value="change_password">
         <div class="col-12 col-lg-4">
           <label for="id_old_password" class="form-label">Current password</label>
           {{ form.old_password }}
@@ -77,4 +132,40 @@
       </form>
     </div>
   </section>
+
+  <script>
+    (function () {
+      const input = document.querySelector('[data-api-key-input]');
+      const toggleButton = document.querySelector('[data-api-key-toggle]');
+      const copyButton = document.querySelector('[data-api-key-copy]');
+      const feedback = document.querySelector('[data-api-key-feedback]');
+      if (!input || !toggleButton || !copyButton || !feedback) {
+        return;
+      }
+
+      toggleButton.addEventListener('click', function () {
+        const showing = input.type === 'text';
+        input.type = showing ? 'password' : 'text';
+        toggleButton.textContent = showing ? 'Show' : 'Hide';
+      });
+
+      copyButton.addEventListener('click', async function () {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(input.value);
+          } else {
+            input.focus();
+            input.select();
+            document.execCommand('copy');
+            input.setSelectionRange(input.value.length, input.value.length);
+          }
+          feedback.className = 'small mt-2 text-success';
+          feedback.textContent = 'API key copied to clipboard.';
+        } catch (error) {
+          feedback.className = 'small mt-2 text-danger';
+          feedback.textContent = 'Copy failed. Please copy the key manually.';
+        }
+      });
+    })();
+  </script>
 {% endblock %}

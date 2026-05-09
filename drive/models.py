@@ -7,6 +7,9 @@ class UserStorageProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='storage_profile')
     quota_bytes = models.PositiveBigIntegerField(default=settings.FILESHARE_DEFAULT_QUOTA_BYTES)
     avatar_url = models.URLField(max_length=500, blank=True, default='')
+    webdav_api_key_hash = models.CharField(max_length=255, blank=True, default='')
+    webdav_api_key_value = models.CharField(max_length=128, blank=True, default='')
+    webdav_api_key_created_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
