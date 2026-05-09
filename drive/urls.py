@@ -1,5 +1,5 @@
 from django.contrib.auth.views import LogoutView
-from django.urls import path
+from django.urls import path, re_path
 
 from . import views
 
@@ -42,4 +42,5 @@ urlpatterns = [
     path("public/<str:token>/download/", views.public_download, name="public-download"),
     path("public/<str:token>/open/", views.public_open, name="public-open"),
     path("public/<str:token>/thumb/", views.public_thumb, name="public-thumb"),
+    re_path(r"^dav(?:/(?P<resource_path>.*))?$", views.webdav_endpoint, name="webdav"),
 ]
