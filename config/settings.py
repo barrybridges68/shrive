@@ -102,10 +102,13 @@ WSGI_APPLICATION = 'config.wsgi.application'
 APP_DATA_ROOT = Path(os.getenv('FILESHARE_DATA_ROOT', BASE_DIR)).expanduser()
 APP_DATA_ROOT.mkdir(parents=True, exist_ok=True)
 
+FILESHARE_STORAGE_ROOT = APP_DATA_ROOT / 'storage'
+FILESHARE_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': APP_DATA_ROOT / 'db.sqlite3',
+        'NAME': FILESHARE_STORAGE_ROOT / 'db.sqlite3',
     }
 }
 
@@ -142,9 +145,6 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = None
 FILE_UPLOAD_TEMP_DIR = APP_DATA_ROOT / 'upload_tmp'
 FILE_UPLOAD_TEMP_DIR.mkdir(parents=True, exist_ok=True)
-
-FILESHARE_STORAGE_ROOT = APP_DATA_ROOT / 'storage'
-FILESHARE_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 LOGS_DIR = APP_DATA_ROOT / 'logs'
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
