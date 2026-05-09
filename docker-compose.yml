@@ -10,7 +10,7 @@ services:
       DJANGO_SECRET_KEY: "change-me-before-production"
       FILESHARE_ENABLE_ADMIN_TODO: "0"
       GUNICORN_WORKERS: "3"
-      GUNICORN_TIMEOUT: "120"
+      GUNICORN_TIMEOUT: "900"
     volumes:
       - ./data:/app/storage
     restart: unless-stopped
