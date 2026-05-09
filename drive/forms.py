@@ -203,7 +203,6 @@ class AdminShareRootSettingsForm(forms.Form):
         ('never', 'Never expire'),
     ]
 
-    user_storage_root = forms.CharField(max_length=1024, label="User share root")
     readonly_storage_roots = forms.CharField(
         widget=forms.Textarea(attrs={"rows": 4}),
         label="Read-only share roots",
@@ -233,12 +232,6 @@ class AdminShareRootSettingsForm(forms.Form):
         super().__init__(*args, **kwargs)
         timezone_choices = sorted((tz, tz) for tz in available_timezones())
         self.fields['timezone_name'].choices = timezone_choices
-
-    def clean_user_storage_root(self):
-        value = self.cleaned_data["user_storage_root"].strip()
-        if not value:
-            raise forms.ValidationError("User share root is required.")
-        return value
 
     def clean_readonly_storage_roots(self):
         raw_value = (self.cleaned_data.get("readonly_storage_roots") or "")

@@ -140,17 +140,70 @@
   width: 35%;
 }
 
-@media (max-width: 991px) {
+@media (max-width: 991.98px) {
   .w-15,
   .w-20,
   .w-35 {
     width: auto;
   }
 
-  .files-table th:nth-child(2),
+  /* Hide Size (col 3) and Updated (col 4) — show inline under filename instead */
   .files-table th:nth-child(3),
-  .files-table td:nth-child(2),
-  .files-table td:nth-child(3) {
+  .files-table th:nth-child(4),
+  .files-table td:nth-child(3),
+  .files-table td:nth-child(4) {
     display: none;
+  }
+}
+
+@media (max-width: 575.98px) {
+  /* Shrink file icons on very small screens */
+  .file-icon {
+    width: 3rem;
+    height: 3rem;
+    min-width: 3rem;
+    min-height: 3rem;
+    flex: 0 0 3rem;
+    font-size: 1.4rem;
+    border-radius: 0.6rem;
+  }
+
+  /* Horizontally scroll the bulk-action toolbar instead of wrapping across many lines */
+  .browser-bulk-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.25rem;
+    justify-content: flex-start !important;
+  }
+
+  .browser-bulk-actions .btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Mobile offcanvas sidebar ── */
+.sidebar-offcanvas {
+  width: 280px;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 40%),
+    #0f172a;
+  border-right: 1px solid rgba(148, 163, 184, 0.16);
+  color: inherit;
+}
+
+.sidebar-offcanvas .offcanvas-header {
+  padding: 1rem 1.25rem;
+}
+
+.sidebar-offcanvas .offcanvas-body {
+  overflow-y: auto;
+}
+
+/* Hamburger button sits flush with the logo */
+@media (max-width: 1199.98px) {
+  .app-header {
+    gap: 0.5rem;
   }
 }

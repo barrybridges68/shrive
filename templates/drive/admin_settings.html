@@ -22,11 +22,6 @@
         {% csrf_token %}
         <input type="hidden" name="action" value="set_share_roots">
         <div class="col-12">
-          <label for="id_user_storage_root" class="form-label">User share root</label>
-          <input type="text" class="form-control" id="id_user_storage_root" name="user_storage_root" value="{{ settings_form.user_storage_root.value|default:'' }}" required>
-          <div class="form-text">Each user folder is stored under this path.</div>
-        </div>
-        <div class="col-12">
           <label for="id_public_share_base_url" class="form-label">Site Base URL</label>
           <input type="url" class="form-control" id="id_public_share_base_url" name="public_share_base_url" value="{{ settings_form.public_share_base_url.value|default:'' }}" placeholder="https://files.example.com">
           <div class="form-text">Optional. Used as the host prefix for shareable public links.</div>
