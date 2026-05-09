@@ -148,13 +148,28 @@
                   <i class="bi bi-cloud-arrow-up"></i>
                   Tap to upload files or folders
                 </div>
-                <div class="mt-3 d-none" id="upload-progress-wrap" aria-live="polite">
-                  <div class="d-flex justify-content-between align-items-center small mb-1">
-                    <span id="upload-progress-label">Uploading...</span>
-                    <span id="upload-progress-value">0%</span>
-                  </div>
-                  <div class="progress" role="progressbar" aria-label="Upload progress">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="upload-progress-bar" style="width: 0%"></div>
+                <div class="modal fade" id="upload-progress-modal" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Upload in progress</h5>
+                      </div>
+                      <div class="modal-body">
+                        <p class="small text-body-secondary mb-3">Do not close or refresh this page while upload is in progress.</p>
+                        <div id="upload-progress-wrap" aria-live="polite">
+                          <div class="d-flex justify-content-between align-items-center small mb-1">
+                            <span id="upload-progress-label">Uploading...</span>
+                            <span id="upload-progress-value">0%</span>
+                          </div>
+                          <div class="progress" role="progressbar" aria-label="Upload progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" id="upload-progress-bar" style="width: 0%"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-danger" id="upload-progress-action">Cancel upload</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </form>
@@ -985,20 +1000,68 @@
         var uploadModeModalElement = document.getElementById('upload-mode-modal');
         var uploadModeFilesButton = document.getElementById('upload-mode-files');
         var uploadModeFolderButton = document.getElementById('upload-mode-folder');
+        var uploadProgressModalElement = document.getElementById('upload-progress-modal');
+        var uploadProgressActionButton = document.getElementById('upload-progress-action');
         var progressWrap = document.getElementById('upload-progress-wrap');
         var progressBar = document.getElementById('upload-progress-bar');
         var progressValue = document.getElementById('upload-progress-value');
         var progressLabel = document.getElementById('upload-progress-label');
         var droppedUploads = [];
         var uploadModeModal = null;
+        var uploadProgressModal = null;
+        var activeUploadXhr = null;
+        var shouldReloadOnProgressClose = false;
 
-        if (!form || !input || !folderInput || !dropzone || !progressWrap || !progressBar || !progressValue || !progressLabel) {
+        if (!form || !input || !folderInput || !dropzone || !progressWrap || !progressBar || !progressValue || !progressLabel || !uploadProgressActionButton) {
           return;
         }
 
         if (uploadModeModalElement && window.bootstrap && window.bootstrap.Modal) {
           uploadModeModal = new window.bootstrap.Modal(uploadModeModalElement);
         }
+
+        if (uploadProgressModalElement && window.bootstrap && window.bootstrap.Modal) {
+          uploadProgressModal = new window.bootstrap.Modal(uploadProgressModalElement, {
+            backdrop: 'static',
+            keyboard: false,
+          });
+        }
+
+        function setProgressActionMode(mode) {
+          if (mode === 'ok') {
+            uploadProgressActionButton.textContent = 'OK';
+            uploadProgressActionButton.classList.remove('btn-outline-danger');
+            uploadProgressActionButton.classList.add('btn-primary');
+            return;
+          }
+
+          uploadProgressActionButton.textContent = 'Cancel upload';
+          uploadProgressActionButton.classList.remove('btn-primary');
+          uploadProgressActionButton.classList.add('btn-outline-danger');
+        }
+
+        uploadProgressActionButton.addEventListener('click', function () {
+          if (activeUploadXhr) {
+            activeUploadXhr.abort();
+            return;
+          }
+
+          if (uploadProgressModal) {
+            uploadProgressModal.hide();
+          }
+
+          if (shouldReloadOnProgressClose) {
+            window.location.reload();
+          }
+        });
+
+        window.addEventListener('beforeunload', function (event) {
+          if (!activeUploadXhr) {
+            return;
+          }
+          event.preventDefault();
+          event.returnValue = '';
+        });
 
         function openUploadModeChooser() {
           if (uploadModeModal && uploadModeFilesButton && uploadModeFolderButton) {
@@ -1098,11 +1161,16 @@
           formData.append('action', 'upload');
           var xhr = new XMLHttpRequest();
           var csrfToken = getCookie('csrftoken');
+          activeUploadXhr = xhr;
+          shouldReloadOnProgressClose = false;
 
-          progressWrap.classList.remove('d-none');
           progressLabel.textContent = 'Uploading...';
           updateProgress(0);
+          setProgressActionMode('cancel');
           setUploading(true);
+          if (uploadProgressModal) {
+            uploadProgressModal.show();
+          }
 
           xhr.open('POST', window.location.href, true);
           if (csrfToken) {
@@ -1117,35 +1185,44 @@
           });
 
           xhr.addEventListener('load', function () {
+            activeUploadXhr = null;
             if (xhr.status >= 200 && xhr.status < 300) {
               updateProgress(100);
               progressLabel.textContent = 'Upload complete';
               droppedUploads = [];
-              window.location.reload();
+              setProgressActionMode('ok');
+              shouldReloadOnProgressClose = true;
               return;
             }
 
             progressLabel.textContent = 'Upload failed (' + xhr.status + ')';
             setUploading(false);
             droppedUploads = [];
+            setProgressActionMode('ok');
           });
 
           xhr.addEventListener('error', function () {
+            activeUploadXhr = null;
             progressLabel.textContent = 'Upload failed';
             setUploading(false);
             droppedUploads = [];
+            setProgressActionMode('ok');
           });
 
           xhr.addEventListener('timeout', function () {
+            activeUploadXhr = null;
             progressLabel.textContent = 'Upload timed out';
             setUploading(false);
             droppedUploads = [];
+            setProgressActionMode('ok');
           });
 
           xhr.addEventListener('abort', function () {
+            activeUploadXhr = null;
             progressLabel.textContent = 'Upload canceled';
             setUploading(false);
             droppedUploads = [];
+            setProgressActionMode('ok');
           });
 
           xhr.send(formData);
