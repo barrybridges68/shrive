@@ -2162,7 +2162,6 @@ def admin_settings(request):
                         f'Invalid: {", ".join(str(path) for path in invalid_roots)}',
                     )
                 else:
-                    configured_settings.user_storage_root = str(user_root.resolve())
                     configured_settings.readonly_storage_root = '\n'.join(
                         str(path.resolve()) for path in readonly_roots
                     )
