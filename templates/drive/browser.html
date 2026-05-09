@@ -1117,14 +1117,33 @@
           });
 
           xhr.addEventListener('load', function () {
-            updateProgress(100);
-            progressLabel.textContent = 'Upload complete';
+            if (xhr.status >= 200 && xhr.status < 300) {
+              updateProgress(100);
+              progressLabel.textContent = 'Upload complete';
+              droppedUploads = [];
+              window.location.reload();
+              return;
+            }
+
+            progressLabel.textContent = 'Upload failed (' + xhr.status + ')';
+            setUploading(false);
             droppedUploads = [];
-            window.location.reload();
           });
 
           xhr.addEventListener('error', function () {
             progressLabel.textContent = 'Upload failed';
+            setUploading(false);
+            droppedUploads = [];
+          });
+
+          xhr.addEventListener('timeout', function () {
+            progressLabel.textContent = 'Upload timed out';
+            setUploading(false);
+            droppedUploads = [];
+          });
+
+          xhr.addEventListener('abort', function () {
+            progressLabel.textContent = 'Upload canceled';
             setUploading(false);
             droppedUploads = [];
           });
