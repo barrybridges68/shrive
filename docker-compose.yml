@@ -3,21 +3,16 @@ services:
     build:
       context: .
     ports:
-      - "8000:8000"
+      - "8073:8000"
     environment:
-      DJANGO_DEBUG: "0"
-      # Set these in your shell or .env when deployed.
-      # Examples:
-      # DJANGO_ALLOWED_HOSTS=files.example.com,192.168.1.100
-      # CSRF_TRUSTED_ORIGINS=https://files.example.com
-      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}"
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "abc.xyz.com"
       DJANGO_SECRET_KEY: "change-me-before-production"
-      CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
-      DJANGO_TRUST_X_FORWARDED_PROTO: "${DJANGO_TRUST_X_FORWARDED_PROTO:-1}"
       FILESHARE_ENABLE_ADMIN_TODO: "0"
       GUNICORN_WORKERS: "3"
       GUNICORN_TIMEOUT: "120"
     volumes:
       - ./data:/app/storage
     restart: unless-stopped
+
 
