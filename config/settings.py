@@ -4,17 +4,59 @@ Django settings for the Shrive project.
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-@5vqsamx&1#)ug@67(&c134t=z^pp*9@-qtin(tg=oh9*n5cej')
 DEBUG = os.getenv('DJANGO_DEBUG', '1').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+def _parse_csv_env(value: str) -> list[str]:
+    return [part.strip() for part in (value or '').split(',') if part.strip()]
+
+
+def _normalise_host_token(token: str) -> str:
+    value = (token or '').strip()
+    if not value:
+        return ''
+    if value == '*':
+        return '*'
+
+    parsed = urlparse(value if '://' in value else f'//{value}')
+    host = parsed.hostname or value
+    host = host.strip()
+    if host.startswith('*.'):
+        host = '.' + host[2:]
+    return host
+
+
 default_allowed_hosts = ["127.0.0.1", "localhost"]
-configured_allowed_hosts = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if host.strip()]
+configured_allowed_hosts = [
+    _normalise_host_token(host)
+    for host in _parse_csv_env(os.getenv('DJANGO_ALLOWED_HOSTS', ''))
+]
+configured_allowed_hosts = [host for host in configured_allowed_hosts if host]
 ALLOWED_HOSTS = configured_allowed_hosts or default_allowed_hosts
 if DEBUG and not configured_allowed_hosts:
     ALLOWED_HOSTS = ["*"]
+
+# CSRF_TRUSTED_ORIGINS for safe cross-origin requests (needed for Docker/proxy setups)
+csrf_trusted_origins_raw = os.getenv('CSRF_TRUSTED_ORIGINS', '').strip()
+if csrf_trusted_origins_raw:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_trusted_origins_raw.split(',') if origin.strip()]
+else:
+    # Auto-build from ALLOWED_HOSTS (common for Docker)
+    CSRF_TRUSTED_ORIGINS = []
+    for host in ALLOWED_HOSTS:
+        if host != '*':
+            csrf_host = f"*.{host[1:]}" if host.startswith('.') else host
+            for scheme in ['http', 'https']:
+                CSRF_TRUSTED_ORIGINS.append(f"{scheme}://{csrf_host}")
+
+if os.getenv('DJANGO_TRUST_X_FORWARDED_PROTO', '1').strip().lower() in {'1', 'true', 'yes', 'on'}:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
 
 INSTALLED_APPS = [
     'django.contrib.admin',
