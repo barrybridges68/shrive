@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Shrive{% endblock %}</title>
-    <link rel="shortcut icon" href="{% static 'assets/images/floppy.svg' %}">
+    <link rel="shortcut icon" href="{% static 'assets/images/icon.png' %}">
     <link rel="stylesheet" href="{% static 'assets/fonts/bootstrap/bootstrap-icons.css' %}">
     <link rel="stylesheet" href="{% static 'assets/css/animate.css' %}">
     <link rel="stylesheet" href="{% static 'assets/css/main.min.css' %}">
@@ -15,6 +15,11 @@
   <body class="fileshare-body">
     {% block header %}<header class="app-header d-flex align-items-center justify-content-between px-3 py-2">
       <div class="d-flex align-items-center gap-3">
+        {% if user.is_authenticated %}
+          <button class="btn btn-outline-secondary btn-sm d-xl-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarOffcanvas" aria-controls="sidebarOffcanvas" aria-label="Open navigation">
+            <i class="bi bi-list fs-5"></i>
+          </button>
+        {% endif %}
         <a href="{% url 'drive:home' %}" class="d-flex align-items-center gap-2 text-decoration-none text-reset">
           <!-- <img src="{% static 'assets/images/logo.svg' %}" class="logo" alt="Shrive"> -->
           <div>
@@ -52,7 +57,7 @@
     <div class="container-fluid py-4">
       {% if user.is_authenticated %}
         <div class="row g-4">
-          <aside class="col-xl-3 col-xxl-2">
+          <aside class="col-xl-3 col-xxl-2 d-none d-xl-block">
             <div class="card border-0 shadow-sm h-100">
               <div class="card-body">
                 <div class="list-group fileshare-nav gap-2">
@@ -113,7 +118,7 @@
               </div>
             </div>
           </aside>
-          <main class="col-xl-9 col-xxl-10">
+          <main class="col-12 col-xl-9 col-xxl-10">
             {% include 'drive/messages.html' %}
             {% block content %}{% endblock %}
           </main>
@@ -126,8 +131,97 @@
       {% endif %}
     </div>
 
+    {% if user.is_authenticated %}
+    <div class="offcanvas offcanvas-start sidebar-offcanvas" tabindex="-1" id="sidebarOffcanvas" aria-labelledby="sidebarOffcanvasLabel">
+      <div class="offcanvas-header border-bottom border-secondary-subtle">
+        <span class="offcanvas-title fw-semibold" id="sidebarOffcanvasLabel">Shrive</span>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      </div>
+      <div class="offcanvas-body d-flex flex-column p-3">
+        <div class="list-group fileshare-nav gap-2">
+          <a href="{% url 'drive:space' %}" class="list-group-item list-group-item-action {% if active_nav == 'space' %}active{% endif %} sidebar-nav-link">
+            <i class="bi bi-hdd-network me-2"></i>My Drive
+          </a>
+          <a href="{% url 'drive:my-shares' %}" class="list-group-item list-group-item-action {% if active_nav == 'my-shares' %}active{% endif %} sidebar-nav-link">
+            <i class="bi bi-share me-2"></i>My shares
+          </a>
+          <a href="{% url 'drive:shared-list' %}" class="list-group-item list-group-item-action {% if active_nav == 'shared' %}active{% endif %} sidebar-nav-link">
+            <i class="bi bi-people me-2"></i>Shared with me
+            {% if incoming_share_count %}<span class="badge rounded-pill text-bg-primary float-end">{{ incoming_share_count }}</span>{% endif %}
+          </a>
+          {% if readonly_root_count %}
+            <a href="{% url 'drive:readonly-list' %}" class="list-group-item list-group-item-action {% if active_nav == 'readonly' %}active{% endif %} sidebar-nav-link">
+              <i class="bi bi-eye me-2"></i>Read only libraries
+              <span class="badge rounded-pill text-bg-secondary float-end">{{ readonly_root_count }}</span>
+            </a>
+          {% endif %}
+          {% if not user.is_staff %}
+            <a href="{% url 'drive:account' %}" class="list-group-item list-group-item-action {% if active_nav == 'account' %}active{% endif %} sidebar-nav-link">
+              <i class="bi bi-person me-2"></i>My account
+            </a>
+          {% endif %}
+          {% if user.is_staff %}
+            <a href="{% url 'drive:admin-users' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-users' %}active{% endif %} sidebar-nav-link">
+              <i class="bi bi-people-fill me-2"></i>Users & groups
+            </a>
+            <a href="{% url 'drive:admin-settings' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-settings' %}active{% endif %} sidebar-nav-link">
+              <i class="bi bi-sliders me-2"></i>Admin settings
+            </a>
+            {% if admin_todo_enabled %}
+              <a href="{% url 'drive:admin-todo' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-todo' %}active{% endif %} sidebar-nav-link">
+                <i class="bi bi-list-check me-2"></i>Admin todo
+                {% if admin_todo_count %}<span class="badge rounded-pill text-bg-primary float-end">{{ admin_todo_count }}</span>{% endif %}
+              </a>
+            {% endif %}
+            <a href="{% url 'drive:admin-stats' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-stats' %}active{% endif %} sidebar-nav-link">
+              <i class="bi bi-graph-up me-2"></i>Admin stats
+            </a>
+            <a href="{% url 'drive:admin-logs' %}" class="list-group-item list-group-item-action {% if active_nav == 'admin-logs' %}active{% endif %} sidebar-nav-link">
+              <i class="bi bi-journal-text me-2"></i>Audit logs
+            </a>
+          {% endif %}
+        </div>
+        {% if show_quota %}
+          <div class="quota-card mt-4 p-3 rounded-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="fw-semibold">Storage usage</span>
+              <span class="small">{{ used_bytes|filesizeformat }} / {{ quota_bytes|filesizeformat }}</span>
+            </div>
+            <div class="progress" role="progressbar" aria-label="Storage usage">
+              <div class="progress-bar" style="width: {{ usage_percent }}%"></div>
+            </div>
+            <div class="small text-body-secondary mt-2">Limits are configured per user by administrators.</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <script src="{% static 'assets/js/jquery.min.js' %}"></script>
     <script src="{% static 'assets/js/bootstrap.bundle.min.js' %}"></script>
+    <script>
+      // Sidebar offcanvas nav: close the drawer then navigate immediately.
+      (function () {
+        var offcanvasEl = document.getElementById('sidebarOffcanvas');
+        if (!offcanvasEl) { return; }
+        offcanvasEl.addEventListener('click', function (event) {
+          var link = event.target.closest('.sidebar-nav-link');
+          if (!link) { return; }
+          event.preventDefault();
+          var href = link.getAttribute('href');
+          var bsOffcanvas = bootstrap.Offcanvas.getInstance(offcanvasEl);
+          if (bsOffcanvas) {
+            offcanvasEl.addEventListener('hidden.bs.offcanvas', function handler() {
+              offcanvasEl.removeEventListener('hidden.bs.offcanvas', handler);
+              window.location.href = href;
+            });
+            bsOffcanvas.hide();
+          } else {
+            window.location.href = href;
+          }
+        });
+      })();
+    </script>
     <script>
       (function () {
         var noticeId = 'folder-download-notice';

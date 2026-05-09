@@ -133,6 +133,26 @@
     </div>
   </section>
 
+  <section class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="mb-3">My email</h5>
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="change_email">
+        <div class="col-12 col-lg-8">
+          <label for="id_email" class="form-label">Email address</label>
+          <input type="email" class="form-control" id="id_email" name="email" value="{{ email_form_value|default:'' }}" placeholder="name@example.com" autocomplete="email">
+        </div>
+        <div class="col-12 col-lg-4 d-flex align-items-end">
+          <button type="submit" class="btn btn-outline-primary w-100">Save email</button>
+        </div>
+        <div class="col-12">
+          <div class="form-text mt-0">Optional. Used for account contact and notifications.</div>
+        </div>
+      </form>
+    </div>
+  </section>
+
   <script>
     (function () {
       const input = document.querySelector('[data-api-key-input]');

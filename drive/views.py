@@ -1737,6 +1737,7 @@ def account_view(request):
 
     form = PasswordChangeForm(user=request.user)
     apply_form_styles(form)
+    email_form_value = request.user.email or ''
     if request.method == 'POST':
         action = (request.POST.get('action') or 'change_password').strip()
 
@@ -1757,6 +1758,30 @@ def account_view(request):
             audit_event('account.webdav_api_key_revoked', request=request, user=request.user)
             messages.success(request, 'WebDAV API key revoked.')
 
+        elif action == 'change_email':
+            email_form_value = (request.POST.get('email') or '').strip()
+            if email_form_value:
+                try:
+                    validate_email(email_form_value)
+                except ValidationError:
+                    messages.error(request, 'Enter a valid email address.')
+                else:
+                    if email_form_value != (request.user.email or ''):
+                        request.user.email = email_form_value
+                        request.user.save(update_fields=['email'])
+                        audit_event('account.email_updated', request=request, user=request.user)
+                        messages.success(request, 'Your email address has been updated.')
+                        return redirect('drive:account')
+                    messages.info(request, 'Your email address is already up to date.')
+            else:
+                if request.user.email:
+                    request.user.email = ''
+                    request.user.save(update_fields=['email'])
+                    audit_event('account.email_updated', request=request, user=request.user)
+                    messages.success(request, 'Your email address has been cleared.')
+                    return redirect('drive:account')
+                messages.info(request, 'Your email address is already empty.')
+
         else:
             form = PasswordChangeForm(user=request.user, data=request.POST)
             apply_form_styles(form)
@@ -1774,6 +1799,7 @@ def account_view(request):
         {
             'active_nav': 'account',
             'form': form,
+            'email_form_value': email_form_value,
             'webdav_api_key_created_at': profile.webdav_api_key_created_at,
             'has_webdav_api_key': bool(profile.webdav_api_key_hash),
             'webdav_api_key_value': profile.webdav_api_key_value,
@@ -2110,7 +2136,6 @@ def admin_settings(request):
     apply_form_styles(password_form)
     settings_form = AdminShareRootSettingsForm(
         initial={
-            'user_storage_root': configured_settings.user_storage_root or str(get_user_storage_root()),
             'readonly_storage_roots': configured_settings.readonly_storage_root
             or '\n'.join(str(root['path']) for root in get_readonly_roots()),
             'public_share_base_url': configured_settings.public_share_base_url or '',
@@ -2125,13 +2150,10 @@ def admin_settings(request):
         if action == 'set_share_roots':
             settings_form = AdminShareRootSettingsForm(request.POST)
             if settings_form.is_valid():
-                user_root = Path(settings_form.cleaned_data['user_storage_root']).expanduser()
                 readonly_roots = [
                     Path(raw_path).expanduser()
                     for raw_path in extract_configured_readonly_paths(settings_form.cleaned_data['readonly_storage_roots'])
                 ]
-
-                user_root.mkdir(parents=True, exist_ok=True)
                 invalid_roots = [path for path in readonly_roots if not path.exists() or not path.is_dir()]
                 if invalid_roots:
                     messages.error(
@@ -2147,12 +2169,11 @@ def admin_settings(request):
                     configured_settings.public_share_base_url = settings_form.cleaned_data['public_share_base_url']
                     configured_settings.public_share_link_lifetime = settings_form.cleaned_data['public_share_link_lifetime']
                     configured_settings.timezone_name = settings_form.cleaned_data['timezone_name']
-                    configured_settings.save(update_fields=['user_storage_root', 'readonly_storage_root', 'public_share_base_url', 'public_share_link_lifetime', 'timezone_name', 'updated_at'])
+                    configured_settings.save(update_fields=['readonly_storage_root', 'public_share_base_url', 'public_share_link_lifetime', 'timezone_name', 'updated_at'])
                     audit_event(
                         'admin.share_roots_updated',
                         request=request,
                         user=request.user,
-                        user_storage_root=configured_settings.user_storage_root,
                         readonly_root_count=len(readonly_roots),
                         public_share_base_url=configured_settings.public_share_base_url,
                         public_share_link_lifetime=configured_settings.public_share_link_lifetime,
